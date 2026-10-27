@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simple Touch test bench</title>
+<style>
+  :root {
+    --bg: #141312; --panel: #1f1d1b; --line: #3a3633; --fg: #efece8; --muted: #a39d96;
+    --accent: #ffb238; --ink-on-accent: #1a1918; --pad: #2b2826;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  h1 { font-size: 18px; margin: 0; }
+  h2 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+  label { color: var(--muted); }
+  input[type=text] { flex: 1 1 260px; min-width: 0; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; }
+  input[type=range] { accent-color: var(--accent); }
+  button { background: var(--pad); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 12px; cursor: pointer; font: inherit; }
+  button.primary { background: var(--accent); color: var(--ink-on-accent); border-color: var(--accent); font-weight: 600; }
+  button[aria-pressed=true] { background: var(--accent); color: var(--ink-on-accent); border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: default; }
+  #status { color: var(--muted); }
+  #status.error { color: #ff7a6b; }
+
+  .bench { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+  @media (max-width: 760px) { .bench { grid-template-columns: minmax(0, 1fr); } }
+  .instrument { display: grid; gap: 16px; }
+  aside { display: grid; gap: 16px; }
+
+  /* Knobs and faders, placed as on the panel:
+       S36 | S31 S32 S33 S34 | S37
+           | S30  levers S35 |          */
+  .controls { display: grid; grid-template-columns: 40px repeat(4, minmax(0, 1fr)) 40px; gap: 14px 12px; }
+  .knob { display: grid; gap: 2px; align-content: start; }
+  .knob span, .fader span { display: flex; justify-content: space-between; gap: 4px; color: var(--muted); font-size: 12px; }
+  .knob input { width: 100%; }
+  .fader { grid-row: 1 / span 2; display: grid; grid-template-rows: auto 1fr; justify-items: center; gap: 4px; }
+  .fader span { flex-direction: column; align-items: center; }
+  .fader input { writing-mode: vertical-lr; direction: rtl; width: 24px; height: 100%; min-height: 120px; }
+  .levers { grid-column: 3 / span 2; display: flex; gap: 12px; justify-content: center; align-items: center; }
+  .lever { display: flex; gap: 2px; align-items: center; }
+  .lever.vertical { flex-direction: column; }
+  .lever button { padding: 3px 8px; font-size: 12px; min-width: 44px; }
+  .lever-name { color: var(--muted); font-size: 11px; text-align: center; }
+
+  /* Pads, placed as on the panel, on a 20-column grid (each pad 4 wide):
+          10   11
+        00  01  02
+      03 04  05  06 07
+        08      09            */
+  .pads { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); gap: 6px 4px; touch-action: none; }
+  .pad { position: relative; grid-column: span 4; aspect-ratio: 1; border-radius: 50%; border: 1px solid var(--line); background: var(--pad); color: var(--muted); font-size: 12px; user-select: none; overflow: hidden; display: grid; place-items: center; cursor: pointer; }
+  .pad i { position: absolute; inset: auto 0 0 0; background: var(--accent); opacity: .85; height: 0; }
+  .pad b { position: relative; font-weight: 600; text-align: center; line-height: 1.2; }
+  .pad kbd { display: block; font: 11px ui-monospace, monospace; opacity: .7; }
+  .pad.on { color: var(--ink-on-accent); }
+
+  .screen { display: flex; gap: 12px; align-items: center; }
+  canvas { width: 100%; aspect-ratio: 4 / 1; border-radius: 4px; background: #06080a; image-rendering: pixelated; }
+  .led { width: 14px; height: 14px; border-radius: 50%; background: #3a1d12; flex: none; }
+  .led.on { background: #ff4e2a; box-shadow: 0 0 10px #ff4e2a; }
+  .meter { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+  .meter i { display: block; height: 100%; width: 0; background: var(--accent); }
+  .choices { display: flex; flex-wrap: wrap; gap: 4px; }
+  .choices button { padding: 4px 10px; font-size: 13px; }
+  .slider { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .slider input { flex: 1; }
+  .hint { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  pre { margin: 0; max-height: 200px; overflow: auto; font: 12px/1.4 ui-monospace, monospace; color: var(--muted); white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Simple Touch test bench</h1>
+
+  <section class="row">
+    <input type="text" id="url" placeholder="URL of a firmware .wasm (or choose a file)" aria-label="Firmware URL">
+    <input type="file" id="file" accept=".wasm" aria-label="Firmware file">
+    <label><input type="checkbox" id="oled" checked> OLED fitted</label>
+    <button class="primary" id="start">Start</button>
+    <button id="stop" disabled>Stop</button>
+    <span id="status">Load a build of a firmware made with scripts/build.mjs.</span>
+  </section>
+
+  <div class="bench">
+    <div class="instrument">
+      <section>
+        <h2>Knobs, faders, levers</h2>
+        <div class="controls" id="controls"></div>
+      </section>
+      <section>
+        <h2>Pads</h2>
+        <div class="pads" id="pads"></div>
+        <p class="hint">Hit a pad near the top to press hard, near the bottom to press softly, and drag up or down while holding to change it. Pens and touch screens use their own pressure. Or play the keys shown.</p>
+      </section>
+    </div>
+
+    <aside>
+      <section>
+        <h2>Screen and LED</h2>
+        <div class="screen"><canvas id="screen" width="512" height="128"></canvas><div class="led" id="led" title="Seed LED"></div></div>
+        <div class="meter"><i id="meter"></i></div>
+        <div class="slider"><label for="volume">Volume</label><input type="range" id="volume" min="0" max="1" step="0.01" value="0.5"></div>
+      </section>
+      <section>
+        <h2>Audio in</h2>
+        <div class="choices" id="inputs"></div>
+        <input type="file" id="loopfile" accept="audio/*" hidden>
+        <div class="slider"><label for="inlevel">Level</label><input type="range" id="inlevel" min="0" max="1.5" step="0.01" value="0.7"></div>
+      </section>
+      <section>
+        <h2>MIDI</h2>
+        <label><input type="checkbox" id="midiin"> MIDI in from this computer's devices</label><br>
+        <label><input type="checkbox" id="midilog"> Show MIDI out in the log</label>
+        <p class="hint" id="midicount">MIDI out: 0 messages</p>
+      </section>
+      <section>
+        <h2>Log</h2>
+        <pre id="log"></pre>
+      </section>
+    </aside>
+  </div>
+</main>
+
+<script type="module">
+import { SimpleTouch, BOARD } from '../web/simple-touch.js';
+import { drawOled, playBoot } from '../web/oled.js';
+
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+$('url').value = params.get('wasm') ?? '';
+
+let ctx = null, st = null, out = null, inGain = null, stopBoot = null, midiAccess = null;
+const controls = Object.fromEntries(Object.keys(BOARD.analog).map((ref) => [ref, 0.5]));
+const levers = { S09_S10: 'centre', S07_S08: 'centre' };
+
+function status(text, error = false) {
+  $('status').textContent = text;
+  $('status').className = error ? 'error' : '';
+}
+function log(text) {
+  const el = $('log');
+  el.textContent = (el.textContent + text).slice(-8000);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ------------------------------------------------------------ knobs, faders, levers
+function control(ref, kind) {
+  const box = document.createElement('label');
+  box.className = kind;
+  box.innerHTML = `<span><b>${ref}</b><output>0.50</output></span><input type="range" min="0" max="1" step="0.001" value="${controls[ref]}">`;
+  const input = box.querySelector('input');
+  input.addEventListener('input', () => {
+    controls[ref] = Number(input.value);
+    box.querySelector('output').textContent = controls[ref].toFixed(2);
+    st?.setControl(ref, controls[ref]);
+  });
+  return box;
+}
+
+function lever(ref, vertical) {
+  const positions = Object.keys(BOARD.switches[ref]);
+  const wrap = document.createElement('div');
+  const row = document.createElement('div');
+  row.className = `lever${vertical ? ' vertical' : ''}`;
+  for (const pos of [positions[0], 'centre', positions[1]]) {
+    const b = document.createElement('button');
+    b.textContent = pos;
+    b.setAttribute('aria-pressed', String(levers[ref] === pos));
+    b.addEventListener('click', () => {
+      levers[ref] = pos;
+      row.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      st?.setSwitch(ref, pos);
+    });
+    row.append(b);
+  }
+  const name = document.createElement('div');
+  name.className = 'lever-name';
+  name.textContent = ref.replace('_', '/');
+  wrap.append(row, name);
+  return wrap;
+}
+
+{
+  const c = $('controls');
+  const leverBox = document.createElement('div');
+  leverBox.className = 'levers';
+  leverBox.append(lever('S09_S10', false), lever('S07_S08', true));
+  c.append(
+    control('S36', 'fader'),
+    control('S31', 'knob'), control('S32', 'knob'), control('S33', 'knob'), control('S34', 'knob'),
+    control('S37', 'fader'),
+    control('S30', 'knob'), leverBox, control('S35', 'knob'),
+  );
+  // Second row: S30 under S31, the levers in the middle, S35 under S34.
+  c.children[6].style.gridColumn = '2';
+  c.children[8].style.gridColumn = '5';
+  c.children[5].style.gridColumn = '6';
+}
+
+// ------------------------------------------------------------ pads
+// [pad, first grid column (of 20), row, key]
+const PAD_LAYOUT = [
+  [10, 6, 1, '3'], [11, 12, 1, '4'],
+  [0, 3, 2, 'w'], [1, 9, 2, 'e'], [2, 15, 2, 'r'],
+  [3, 1, 3, 'a'], [4, 5, 3, 's'], [5, 9, 3, 'd'], [6, 13, 3, 'f'], [7, 17, 3, 'g'],
+  [8, 3, 4, 'x'], [9, 15, 4, 'v'],
+];
+const padEls = [];
+const keyPad = new Map();
+
+function showPad(i, down, force) {
+  padEls[i].classList.toggle('on', down);
+  padEls[i].querySelector('i').style.height = down ? `${Math.round(20 + force * 80)}%` : '0';
+}
+function pad(i, down, force = 0.5) {
+  showPad(i, down, force);
+  st?.setPad(i, down, force);
+}
+
+for (const [i, col, row, key] of PAD_LAYOUT) {
+  const el = document.createElement('div');
+  el.className = 'pad';
+  el.style.gridColumn = `${col} / span 4`;
+  el.style.gridRow = String(row);
+  el.innerHTML = `<i></i><b>P${String(i).padStart(2, '0')}<kbd>${key.toUpperCase()}</kbd></b>`;
+  // Force: a pen's or touch screen's own pressure where there is one; else
+  // where the pad was hit (top = hard, bottom = soft), then dragging up or
+  // down from there.
+  let startY = 0, base = 0.5, held = false;
+  const force = (e) => {
+    if (e.pointerType !== 'mouse' && e.pressure > 0 && e.pressure !== 0.5) return e.pressure;
+    return Math.min(1, Math.max(0, base + (startY - e.clientY) / 120));
+  };
+  el.addEventListener('pointerdown', (e) => {
+    el.setPointerCapture(e.pointerId);
+    held = true;
+    startY = e.clientY;
+    const r = el.getBoundingClientRect();
+    base = Math.min(1, Math.max(0.05, 1 - (e.clientY - r.top) / r.height));
+    pad(i, true, force(e));
+  });
+  el.addEventListener('pointermove', (e) => { if (held) pad(i, true, force(e)); });
+  const up = () => { if (held) { held = false; pad(i, false); } };
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  padEls[i] = el;
+  keyPad.set(key, i);
+  $('pads').append(el);
+}
+addEventListener('keydown', (e) => {
+  const i = keyPad.get(e.key.toLowerCase());
+  if (i !== undefined && !e.repeat && !e.target.matches('input[type=text]')) pad(i, true, 0.6);
+});
+addEventListener('keyup', (e) => {
+  const i = keyPad.get(e.key.toLowerCase());
+  if (i !== undefined) pad(i, false);
+});
+
+// ------------------------------------------------------------ audio in
+// One source at a time into the firmware's input: nothing, the mic, a loop
+// from loops/loops.json, or a file of your own, looped.
+const inputs = { current: 'off', node: null, stream: null, buffers: new Map() };
+let loops = [];
+try {
+  loops = await (await fetch('loops/loops.json')).json();
+} catch {
+  loops = [];
+}
+
+const choices = [
+  { id: 'off', name: 'Off' },
+  { id: 'mic', name: 'Mic' },
+  ...loops.map((l) => ({ id: `loop:${l.file}`, name: l.name, url: `loops/${l.file}` })),
+  { id: 'file', name: 'File…' },
+];
+for (const c of choices) {
+  const b = document.createElement('button');
+  b.textContent = c.name;
+  b.dataset.id = c.id;
+  b.setAttribute('aria-pressed', String(c.id === 'off'));
+  b.addEventListener('click', () => (c.id === 'file' ? $('loopfile').click() : selectInput(c)));
+  $('inputs').append(b);
+}
+$('loopfile').addEventListener('change', () => {
+  const f = $('loopfile').files[0];
+  if (f) selectInput({ id: 'file', name: f.name, file: f });
+});
+$('inlevel').addEventListener('input', () => { if (inGain) inGain.gain.value = Number($('inlevel').value); });
+
+function stopInput() {
+  inputs.node?.disconnect();
+  if (inputs.node?.stop) inputs.node.stop();
+  inputs.stream?.getTracks().forEach((t) => t.stop());
+  inputs.node = inputs.stream = null;
+}
+
+async function loopBuffer(choice) {
+  const key = choice.url ?? `file:${choice.name}:${choice.file.size}`;
+  if (!inputs.buffers.has(key)) {
+    const bytes = choice.file ? await choice.file.arrayBuffer() : await (await fetch(choice.url)).arrayBuffer();
+    inputs.buffers.set(key, await ctx.decodeAudioData(bytes));
+  }
+  return inputs.buffers.get(key);
+}
+
+async function selectInput(choice) {
+  inputs.current = choice.id;
+  inputs.choice = choice;
+  $('inputs').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === choice.id)));
+  if (!ctx) return;  // connected on Start
+  stopInput();
+  try {
+    if (choice.id === 'mic') {
+      inputs.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+      inputs.node = ctx.createMediaStreamSource(inputs.stream);
+    } else if (choice.url || choice.file) {
+      inputs.node = new AudioBufferSourceNode(ctx, { buffer: await loopBuffer(choice), loop: true });
+      inputs.node.start();
+    }
+    if (inputs.current !== choice.id) return stopInput();  // another choice came while this one loaded
+    inputs.node?.connect(inGain);
+  } catch (e) {
+    status(`Audio in (${choice.name}): ${e.message || 'could not load'}`, true);
+  }
+}
+
+// ------------------------------------------------------------ start / stop
+const screen = $('screen');
+drawOled(screen, null, 0);
+let midiCount = 0;
+
+$('start').addEventListener('click', async () => {
+  const file = $('file').files[0];
+  const url = $('url').value.trim();
+  if (!file && !url) return status('Give a URL or choose a .wasm file.', true);
+  stop();
+  status('Loading…');
+  try {
+    ctx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
+    const source = file ? await file.arrayBuffer() : url;
+    st = await SimpleTouch.load(ctx, source, {
+      oled: $('oled').checked, controls, switches: levers,
+      onProgress: (n) => status(`Loading… ${(n / 1024).toFixed(0)} KB`),
+    });
+    // Firmware out → volume → limiter: a feedback patch can get loud.
+    out = ctx.createGain();
+    out.gain.value = Number($('volume').value);
+    const limiter = new DynamicsCompressorNode(ctx, { threshold: -3, knee: 0, ratio: 20, attack: 0.001, release: 0.1 });
+    st.node.connect(out).connect(limiter).connect(ctx.destination);
+    inGain = new GainNode(ctx, { gain: Number($('inlevel').value) });
+    inGain.connect(st.node);
+
+    let live = null;
+    st.on('oled', (m) => { live = m; if (!stopBoot) drawOled(screen, m.ram, m.info); });
+    st.on('led', (m) => { if (!stopBoot) $('led').classList.toggle('on', m.on); });
+    st.on('meter', (m) => { $('meter').style.width = `${Math.min(100, m.peak * 100)}%`; });
+    st.on('log', (m) => log(m.text));
+    st.on('midi', (m) => {
+      midiCount++;
+      $('midicount').textContent = `MIDI out: ${midiCount} messages`;
+      if ($('midilog').checked) log(`midi out: ${[...m.bytes].map((b) => b.toString(16).padStart(2, '0')).join(' ')}\n`);
+    });
+    st.on('error', (m) => status(m.message, true));
+
+    const ready = await st.ready;
+    await ctx.resume();
+    status(`Running at ${ready.sampleRate} Hz, block ${ready.blockSize}. Boot: ${ready.boot.length} frames.`);
+    stopBoot = playBoot(ready.boot, (f) => {
+      drawOled(screen, f.ram, f.info);
+      $('led').classList.toggle('on', !!f.led);
+    }, () => {
+      stopBoot = null;
+      if (live) drawOled(screen, live.ram, live.info);
+    });
+    $('stop').disabled = false;
+    if (inputs.choice) selectInput(inputs.choice);
+    if ($('midiin').checked) connectMidi();
+  } catch (e) {
+    status(e.message, true);
+    stop();
+  }
+});
+
+function stop() {
+  stopBoot?.();
+  stopBoot = null;
+  stopInput();
+  st?.disconnect();
+  ctx?.close();
+  st = ctx = out = inGain = null;
+  $('stop').disabled = true;
+  $('led').classList.remove('on');
+}
+$('stop').addEventListener('click', () => { stop(); status('Stopped.'); });
+$('volume').addEventListener('input', () => { if (out) out.gain.value = Number($('volume').value); });
+
+// ------------------------------------------------------------ MIDI in
+async function connectMidi() {
+  try {
+    midiAccess ??= await navigator.requestMIDIAccess({ sysex: false });
+    for (const input of midiAccess.inputs.values()) {
+      input.onmidimessage = (e) => { if ($('midiin').checked) st?.sendMidi(e.data); };
+    }
+  } catch (e) {
+    status(`MIDI: ${e.message}`, true);
+    $('midiin').checked = false;
+  }
+}
+$('midiin').addEventListener('change', () => { if ($('midiin').checked) connectMidi(); });
+</script>
+</body>
+</html>

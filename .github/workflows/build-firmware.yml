@@ -1,0 +1,138 @@
+# Builds a libDaisy firmware for the browser, checks it headless, and
+# publishes it on the firmware repository's simple-touch-web branch.
+#
+# A firmware repository calls it from a workflow of its own:
+#
+#   on:
+#     push:
+#       branches: [main]
+#     workflow_dispatch:
+#   jobs:
+#     browser:
+#       uses: jonwaterschoot/simple-touch-web/.github/workflows/build-firmware.yml@v1
+#       permissions:
+#         contents: write
+#
+# The run's summary links the build to the test bench and has the
+# "emulator" block to put in simple-touch-labels.json.
+
+name: Build for the browser
+
+on:
+  workflow_call:
+    inputs:
+      firmware-dir:
+        description: The firmware's folder in the repository (where its Makefile is)
+        type: string
+        default: .
+      branch:
+        description: The branch builds are published on
+        type: string
+        default: simple-touch-web
+      keep:
+        description: How many builds the branch keeps
+        type: number
+        default: 20
+      simple-touch-web-ref:
+        description: The simple-touch-web version to build with
+        type: string
+        default: v1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the firmware
+        uses: actions/checkout@v4
+        with:
+          path: firmware
+          submodules: recursive
+
+      - name: Check out simple-touch-web
+        uses: actions/checkout@v4
+        with:
+          repository: jonwaterschoot/simple-touch-web
+          ref: ${{ inputs.simple-touch-web-ref }}
+          path: simple-touch-web
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cache wasi-sdk
+        id: wasi-sdk
+        uses: actions/cache@v4
+        with:
+          path: ~/.wasi-sdk
+          key: wasi-sdk-34-x86_64-linux
+
+      - name: Install wasi-sdk
+        if: steps.wasi-sdk.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.wasi-sdk
+          curl -fsSL https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz \
+            | tar -xz -C ~/.wasi-sdk
+
+      - name: Build
+        run: >
+          node simple-touch-web/scripts/build.mjs "firmware/${{ inputs.firmware-dir }}"
+          --out out/firmware.wasm --info out/build.json
+
+      - name: Check it runs
+        run: node simple-touch-web/test/smoke.mjs out/firmware.wasm
+
+      - name: Publish
+        env:
+          BRANCH: ${{ inputs.branch }}
+          KEEP: ${{ inputs.keep }}
+        run: |
+          set -euo pipefail
+          cd firmware
+          if git fetch -q --depth=1 origin "$BRANCH" 2>/dev/null; then
+            git worktree add -q ../publish FETCH_HEAD
+            git -C ../publish checkout -q -B "$BRANCH"
+          else
+            git worktree add -q --orphan -b "$BRANCH" ../publish
+          fi
+          cd ..
+          name=$(node simple-touch-web/scripts/publish.mjs publish out/firmware.wasm out/build.json \
+            --repo "$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" --branch "$BRANCH" --keep "$KEEP")
+          if [ -z "$name" ]; then
+            echo "This exact build is already on $BRANCH."
+            name=$(node -p "const i=require('./out/build.json'); i.target + '-' + i.sha256.slice(0, 12)")
+          else
+            cd publish
+            git add -A
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Browser build $name from ${GITHUB_SHA:0:7}"
+            git push -q origin "HEAD:$BRANCH"
+            cd ..
+          fi
+          echo "NAME=$name" >> "$GITHUB_ENV"
+
+      - name: Summary
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          set -euo pipefail
+          url="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$BRANCH/$NAME.wasm"
+          sha=$(node -p "require('./out/build.json').sha256")
+          kb=$(node -p "Math.round(require('./out/build.json').bytes / 1024)")
+          {
+            echo "### Browser build: $NAME.wasm ($kb KB)"
+            echo
+            echo "[Play it on the test bench](https://jonwaterschoot.github.io/simple-touch-web/demo/?wasm=$url)"
+            echo
+            echo "If it plays as the firmware should, add this to \`simple-touch-labels.json\` to let the Simple Touch library play this build (\`\"link-only\"\` to only link to your page instead):"
+            echo
+            echo '```json'
+            echo "\"emulator\": {"
+            echo "  \"wasm\": \"$url\","
+            echo "  \"abi\": \"simple-touch-web/1\","
+            echo "  \"sha256\": \"$sha\","
+            echo "  \"embed\": \"allowed\""
+            echo "}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

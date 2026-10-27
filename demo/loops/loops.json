@@ -1,0 +1,5 @@
+[
+  { "name": "Drums", "file": "drums.wav" },
+  { "name": "Melodic", "file": "melodic.wav" },
+  { "name": "Texture", "file": "texture.wav" }
+]
