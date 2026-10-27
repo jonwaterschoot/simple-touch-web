@@ -1,5 +1,7 @@
 [
-  { "name": "Drums", "file": "drums.wav" },
-  { "name": "Melodic", "file": "melodic.wav" },
-  { "name": "Texture", "file": "texture.wav" }
+  { "name": "Drums", "file": "drumloop_95bpm.flac", "bpm": 95 },
+  { "name": "Chords", "file": "chordsloop_95bpm.flac", "bpm": 95 },
+  { "name": "Drums + chords", "file": "drumchords_95bpm.flac", "bpm": 95 },
+  { "name": "Melody", "file": "melody_95bpm.flac", "bpm": 95 },
+  { "name": "Texture", "file": "texture.flac" }
 ]

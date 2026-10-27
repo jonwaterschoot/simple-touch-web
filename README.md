@@ -75,7 +75,7 @@ node test/smoke.mjs ../TouchVink/build-web/TouchVink.wasm 0,4,5,6   # P0, then P
 
 - the controls laid out as on the panel, and the pads with force
 - the OLED and LED
-- audio in: the mic, a loop from [demo/loops](demo/loops/loops.json), or a file of your own
+- audio in: the mic, a loop from [demo/loops](demo/loops/loops.json) (drums, chords, melody and a texture, 95 bpm), or a file of your own. The Simple Touch library uses the same loops from here.
 - Web MIDI as MIDI input
 - the firmware's log
 
@@ -146,7 +146,10 @@ The author decides whether others may play their firmware, and which build. Appr
 }
 ```
 
-- `embed: "allowed"` lets the Simple Touch library play the build in its own page. `"link-only"`, or no block, means the library only links to the author's page (add `"url"`).
+- `embed: "allowed"` lets the [Simple Touch library](https://jonwaterschoot.github.io/simple-touch-labels/) play the build in its own page, on the panel drawing, with a Play button. `"link-only"`, or no block, means the library only links to the author's page (add `"url"`).
+- `"oled": true` (optional) says the firmware drives the optional OLED, so the library shows one on the panel.
+- The library only plays a build from the firmware's own repository: its raw files (`raw.githubusercontent.com/<owner>/<repo>/…`) or its owner's Pages (`<owner>.github.io/…`), or the Codeberg equivalents.
+- The designer has a **Browser build** field for this block, so the label file can be made and saved there.
 - `sha256` pins the approved build: the loader refuses any other. A build is reproducible, so the same sources and toolchain give the same hash.
 - `raw.githubusercontent.com` and GitHub Pages send the CORS header that a page on another site needs. GitHub release downloads may not.
 
@@ -166,3 +169,5 @@ A firmware that uses something the board lacks fails to build (a missing HAL hea
 ## Licenses
 
 simple-touch-web is MIT. A build also contains libDaisy (MIT), DaisySP (MIT) and, when the firmware uses it, DaisySP-LGPL (LGPL 2.1). If you publish a build with LGPL code, keep the firmware's source public and credit it.
+
+The loops in [demo/loops](demo/loops) are by Jon Waterschoot, made for trying firmware here and in the Simple Touch library.
