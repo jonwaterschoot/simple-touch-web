@@ -21,6 +21,7 @@ board/ ─────────┘                                   ▼
 - **board/src** implements those classes on the virtual board: GPIO, ADC, I2C, UART, USB serial and MIDI, timers, `System`, `AudioHandle` and `DaisySeed`. It also emulates the MPR121 (pads, with pressure) and the SSD1306 (OLED) at register level, and exports the `st_*` functions the page calls.
 - **Timing.** The worklet asks for 128-frame quanta. The board cuts them into the firmware's own audio blocks, one block ahead as on the Seed. Before each block it runs the main-loop passes that have come due: one every 1 ms, or later when a pass called `System::Delay()` for longer. Everything runs on the audio thread, against a virtual clock driven by the samples rendered.
 - **Boot film.** Setup runs once, when the page starts the module. Whatever it shows on the OLED and LED along the way (a boot animation) is recorded with its timing, and the page plays it back.
+- **The LED in a pass.** A pass runs in one go, so a blink made inside it (LED on, `Delay(130)`, off) would reach the page as its last state. The board queues each LED change with the pass's clock and shows it when the audio gets there. The OLED shows the last frame of a pass.
 
 ## Building a firmware
 
@@ -78,6 +79,7 @@ int main() {
 
 ```sh
 node test/smoke.mjs ../TouchVink/build-web/TouchVink.wasm 0,4,5,6   # P0, then P4, P5, P6
+node test/smoke.mjs ../TouchPlaited/build-web/TouchPlaited.wasm 0+2   # P0 and P2 held together
 ```
 
 ## Playing it

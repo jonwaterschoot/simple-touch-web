@@ -69,6 +69,38 @@ int Slot(Pin p) { return p.port < daisy::PORTX && p.pin < 16 ? p.port * 16 + p.p
 
 constexpr Pin kLedPin = Pin(daisy::PORTC, 7);
 
+// ------------------------------------------------------------ the LED as shown
+// A main loop pass runs in one go, ahead of the audio, and its Delay() calls
+// only move its own clock. A blink made inside one pass (on, wait, off)
+// would reach the page as its last state. So each change of the LED is
+// queued with the clock at that moment, and st_led() shows it when the
+// audio gets there.
+struct LedEdge
+{
+    uint64_t us;
+    bool     on;
+};
+constexpr int kLedEdges = 64;
+LedEdge       led_edges[kLedEdges];
+int           led_first = 0, led_count = 0;
+bool          led_shown = false;
+
+void QueueLed(bool on)
+{
+    const bool last
+        = led_count ? led_edges[(led_first + led_count - 1) % kLedEdges].on : led_shown;
+    if(on == last)
+        return;
+    if(led_count == kLedEdges)  // full: the oldest change shows now
+    {
+        led_shown = led_edges[led_first].on;
+        led_first = (led_first + 1) % kLedEdges;
+        led_count--;
+    }
+    led_edges[(led_first + led_count) % kLedEdges] = {NowUs(), on};
+    led_count++;
+}
+
 // ------------------------------------------------------------ audio
 constexpr size_t kMaxFrames = 1024;  // per st_process call
 constexpr size_t kMaxBlock  = 1024;
@@ -244,6 +276,8 @@ void PinWrite(Pin p, bool level)
         return;
     is_output[s] = true;
     out_level[s] = level;
+    if(s == Slot(kLedPin) && phase == Phase::Run)
+        QueueLed(level);
 }
 
 bool PinOutput(Pin p)
@@ -326,6 +360,7 @@ ST_EXPORT(st_init) void st_init(float rate)
     base_us      = setup_us;
     samples      = 0;
     next_pass_us = base_us;
+    led_shown    = Led();
 }
 
 ST_EXPORT(st_max_frames) int st_max_frames() { return int(kMaxFrames); }
@@ -394,7 +429,17 @@ ST_EXPORT(st_midi_out_buf) uint8_t* st_midi_out_buf() { return midi_out; }
 ST_EXPORT(st_midi_out_len) int st_midi_out_len() { return int(midi_out_len); }
 ST_EXPORT(st_midi_out_clear) void st_midi_out_clear() { midi_out_len = 0; }
 
-ST_EXPORT(st_led) int st_led() { return Led(); }
+ST_EXPORT(st_led) int st_led()
+{
+    const uint64_t now = AudioClockUs();
+    while(led_count && led_edges[led_first].us <= now)
+    {
+        led_shown = led_edges[led_first].on;
+        led_first = (led_first + 1) % kLedEdges;
+        led_count--;
+    }
+    return led_shown;
+}
 
 ST_EXPORT(st_oled_ram) const uint8_t* st_oled_ram() { return oled.Ram(); }
 ST_EXPORT(st_oled_info) uint32_t st_oled_info() { return oled_fitted ? oled.Info() : 0; }

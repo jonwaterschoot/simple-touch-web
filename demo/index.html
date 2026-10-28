@@ -95,7 +95,8 @@
       <section>
         <h2>Pads</h2>
         <div class="pads" id="pads"></div>
-        <p class="hint">Hit a pad near the top to press hard, near the bottom to press softly, and drag up or down while holding to change it. Pens and touch screens use their own pressure. Or play the keys shown.</p>
+        <p class="hint">Hit a pad near the top to press hard, near the bottom to press softly, and drag up or down while holding to change it. Pens and touch screens use their own pressure. Right-click a pad to keep it held (for a combo such as P2 + P11), and right-click it again to let go. Or play the keys shown.</p>
+        <div class="row hint" id="keys"><span>Keys</span></div>
       </section>
     </div>
 
@@ -203,21 +204,30 @@ function lever(ref, vertical) {
 }
 
 // ------------------------------------------------------------ pads
-// [pad, first grid column (of 20), row, key]
+// [pad, first grid column (of 20), row, key]. The keys play by position
+// (KeyboardEvent.code), so they sit in the same place on any layout; the
+// layout only changes the names shown, as in the Simple Touch library.
 const PAD_LAYOUT = [
-  [10, 6, 1, '3'], [11, 12, 1, '4'],
-  [0, 3, 2, 'w'], [1, 9, 2, 'e'], [2, 15, 2, 'r'],
-  [3, 1, 3, 'a'], [4, 5, 3, 's'], [5, 9, 3, 'd'], [6, 13, 3, 'f'], [7, 17, 3, 'g'],
-  [8, 3, 4, 'x'], [9, 15, 4, 'v'],
+  [10, 6, 1, 'Digit3'], [11, 12, 1, 'Digit4'],
+  [0, 3, 2, 'KeyW'], [1, 9, 2, 'KeyE'], [2, 15, 2, 'KeyR'],
+  [3, 1, 3, 'KeyA'], [4, 5, 3, 'KeyS'], [5, 9, 3, 'KeyD'], [6, 13, 3, 'KeyF'], [7, 17, 3, 'KeyG'],
+  [8, 3, 4, 'KeyX'], [9, 15, 4, 'KeyV'],
 ];
+const KEY_LAYOUTS = {
+  qwerty: { label: 'QWERTY', names: {} },
+  azerty: { label: 'AZERTY', names: { Digit3: '"', Digit4: "'", KeyW: 'Z', KeyA: 'Q' } },
+};
+const KEYS_PREF = 'simpleTouchWeb.keys';
 const padEls = [];
 const keyPad = new Map();
+const held = new Set();  // pads kept down by a right-click
 
 function showPad(i, down, force) {
   padEls[i].classList.toggle('on', down);
   padEls[i].querySelector('i').style.height = down ? `${Math.round(20 + force * 80)}%` : '0';
 }
 function pad(i, down, force = 0.5) {
+  if (!down) held.delete(i);
   showPad(i, down, force);
   st?.setPad(i, down, force);
 }
@@ -227,25 +237,35 @@ for (const [i, col, row, key] of PAD_LAYOUT) {
   el.className = 'pad';
   el.style.gridColumn = `${col} / span 4`;
   el.style.gridRow = String(row);
-  el.innerHTML = `<i></i><b>P${String(i).padStart(2, '0')}<kbd>${key.toUpperCase()}</kbd></b>`;
+  el.innerHTML = `<i></i><b>P${String(i).padStart(2, '0')}<kbd></kbd></b>`;
   // Force: a pen's or touch screen's own pressure where there is one; else
   // where the pad was hit (top = hard, bottom = soft), then dragging up or
   // down from there.
-  let startY = 0, base = 0.5, held = false;
+  let startY = 0, base = 0.5, pressing = false;
   const force = (e) => {
     if (e.pointerType !== 'mouse' && e.pressure > 0 && e.pressure !== 0.5) return e.pressure;
     return Math.min(1, Math.max(0, base + (startY - e.clientY) / 120));
   };
-  el.addEventListener('pointerdown', (e) => {
-    el.setPointerCapture(e.pointerId);
-    held = true;
+  const hit = (e) => {
     startY = e.clientY;
     const r = el.getBoundingClientRect();
     base = Math.min(1, Math.max(0.05, 1 - (e.clientY - r.top) / r.height));
+  };
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button === 2) {  // right-click: held until right-clicked again or played
+      if (held.has(i)) pad(i, false);
+      else { hit(e); pad(i, true, force(e)); held.add(i); }
+      return;
+    }
+    if (e.button > 0) return;
+    el.setPointerCapture(e.pointerId);
+    pressing = true;
+    hit(e);
     pad(i, true, force(e));
   });
-  el.addEventListener('pointermove', (e) => { if (held) pad(i, true, force(e)); });
-  const up = () => { if (held) { held = false; pad(i, false); } };
+  el.addEventListener('pointermove', (e) => { if (pressing) pad(i, true, force(e)); });
+  const up = () => { if (pressing) { pressing = false; pad(i, false); } };
   el.addEventListener('pointerup', up);
   el.addEventListener('pointercancel', up);
   padEls[i] = el;
@@ -253,13 +273,40 @@ for (const [i, col, row, key] of PAD_LAYOUT) {
   $('pads').append(el);
 }
 addEventListener('keydown', (e) => {
-  const i = keyPad.get(e.key.toLowerCase());
-  if (i !== undefined && !e.repeat && !e.target.matches('input[type=text]')) pad(i, true, 0.6);
+  const i = keyPad.get(e.code);
+  if (i !== undefined && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.matches('input[type=text]')) pad(i, true, 0.6);
 });
 addEventListener('keyup', (e) => {
-  const i = keyPad.get(e.key.toLowerCase());
+  const i = keyPad.get(e.code);
   if (i !== undefined) pad(i, false);
 });
+
+let keyLayout = 'qwerty', keyLayoutSet = false;
+try { if (KEY_LAYOUTS[localStorage.getItem(KEYS_PREF)]) { keyLayout = localStorage.getItem(KEYS_PREF); keyLayoutSet = true; } } catch {}
+function showKeys() {
+  for (const [i, , , key] of PAD_LAYOUT) {
+    padEls[i].querySelector('kbd').textContent = KEY_LAYOUTS[keyLayout].names[key] ?? key.replace(/^(Key|Digit)/, '');
+  }
+  $('keys').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.layout === keyLayout)));
+}
+for (const [id, { label }] of Object.entries(KEY_LAYOUTS)) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.dataset.layout = id;
+  b.textContent = label;
+  b.addEventListener('click', () => {
+    keyLayout = id;
+    keyLayoutSet = true;
+    try { localStorage.setItem(KEYS_PREF, id); } catch {}
+    showKeys();
+  });
+  $('keys').append(b);
+}
+showKeys();
+// the keyboard's own layout, where the browser tells (Chrome), until one is picked
+navigator.keyboard?.getLayoutMap?.().then((m) => {
+  if (!keyLayoutSet && (m.get('KeyQ') === 'a' || m.get('KeyW') === 'z')) { keyLayout = 'azerty'; showKeys(); }
+}).catch(() => {});
 
 // ------------------------------------------------------------ audio in
 // One source at a time into the firmware's input: nothing, the mic, a loop

@@ -5,6 +5,8 @@
 // a WAV next to the build, so a build can be checked without a browser.
 //
 //   node test/smoke.mjs <firmware.wasm> [pads, e.g. 0,4,5,6; default all]
+//
+// A step can press pads together: 2+11 holds P2 and P11 at once.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -105,19 +107,20 @@ function oledText(m) {
 render(1);
 console.log(`idle 1 s: ${level(0)}`);
 
-const order = process.argv[3] ? process.argv[3].split(',').map(Number) : [...Array(12).keys()];
-for (const pad of order) {
+const order = process.argv[3] ? process.argv[3].split(',') : [...Array(12).keys()].map(String);
+for (const [i, step] of order.entries()) {
+  const pads = step.split('+').map(Number);
   const from = left.length;
   messages.length = 0;
-  send({ type: 'pad', index: pad, down: true, force: 0.7 });
+  for (const pad of pads) send({ type: 'pad', index: pad, down: true, force: 0.7 });
   render(0.4);
   const during = messages.filter((m) => m.type === 'oled').at(-1);
-  send({ type: 'pad', index: pad, down: false });
+  for (const pad of pads) send({ type: 'pad', index: pad, down: false });
   render(0.6);
   const midi = messages.filter((m) => m.type === 'midi').reduce((n, m) => n + m.bytes.length, 0);
   const leds = messages.filter((m) => m.type === 'led').length;
-  console.log(`P${pad}: ${level(from)}, ${midi} MIDI bytes out, ${leds} LED changes`);
-  if (pad === order[Math.min(4, order.length - 1)]) console.log(oledText(during));
+  console.log(`${pads.map((pad) => `P${pad}`).join('+')}: ${level(from)}, ${midi} MIDI bytes out, ${leds} LED changes`);
+  if (i === Math.min(4, order.length - 1)) console.log(oledText(during));
 }
 
 const log = messages.filter((m) => m.type === 'log').map((m) => m.text).join('');
