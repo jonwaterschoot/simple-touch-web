@@ -2,6 +2,8 @@
 
 Run a Synthux Simple Touch firmware in the browser: the firmware's own C++ (libDaisy, DaisySP), compiled to WebAssembly and played on a virtual Simple Touch, with its knobs, faders, levers, pressure-sensing pads, LED, optional OLED, audio in and USB MIDI.
 
+It is one step of a longer route: a firmware in its own repository, labelled and manualled with the [Simple Touch library and designer](https://jonwaterschoot.github.io/simple-touch-labels/), listed in the Synthux community directory, and then playable in the library. The [whole route](https://jonwaterschoot.github.io/simple-touch-labels/about.html#route) is drawn on the library's about page; this repository is [step 4](https://jonwaterschoot.github.io/simple-touch-labels/about.html#step-4).
+
 It doesn't model the instrument in JavaScript. The firmware runs as it is, against a stand-in for the Daisy Seed's hardware. Its pad code reads an emulated MPR121 over an emulated I2C bus, and its screen code drives an emulated SSD1306. What the browser plays is what the firmware does.
 
 ## How it works
@@ -76,7 +78,7 @@ node test/smoke.mjs ../TouchVink/build-web/TouchVink.wasm 0,4,5,6   # P0, then P
 - the controls laid out as on the panel, and the pads with force
 - the OLED and LED
 - audio in: the mic, a loop from [demo/loops](demo/loops/loops.json) (drums, chords, melody and a texture, 95 bpm), or a file of your own. The Simple Touch library uses the same loops from here.
-- Web MIDI as MIDI input
+- Web MIDI as MIDI input, and a count (or a log) of the MIDI the firmware sends
 - the firmware's log
 
 Add `?wasm=<url>` to play a published build. For a local build, serve a folder that holds both repositories:
@@ -86,7 +88,7 @@ cd ~/GitHub && python -m http.server
 # http://localhost:8000/simple-touch-web/demo/?wasm=/TouchVink/build-web/TouchVink.wasm
 ```
 
-In a page of your own:
+For a whole page around it (your manual, in your look, with the controls on the panel drawing), the [Simple Touch designer](https://jonwaterschoot.github.io/simple-touch-labels/editor.html)'s **Web app…** makes one for GitHub Pages. To build your own page instead:
 
 ```js
 import { SimpleTouch } from './web/simple-touch.js';
@@ -146,7 +148,7 @@ The author decides whether others may play their firmware, and which build. Appr
 }
 ```
 
-- `embed: "allowed"` lets the [Simple Touch library](https://jonwaterschoot.github.io/simple-touch-labels/) play the build in its own page, on the panel drawing, with a Play button. `"link-only"`, or no block, means the library only links to the author's page (add `"url"`).
+- `embed: "allowed"` lets the [Simple Touch library](https://jonwaterschoot.github.io/simple-touch-labels/) play the build in its own page, on the panel drawing, with a Play button. `"link-only"` with a `"url"` only links to the author's own page. Without the block the library shows no Play at all.
 - `"oled": true` (optional) says the firmware drives the optional OLED, so the library shows one on the panel.
 - The library only plays a build from the firmware's own repository: its raw files (`raw.githubusercontent.com/<owner>/<repo>/…`) or its owner's Pages (`<owner>.github.io/…`), or the Codeberg equivalents.
 - The designer has a **Browser build** field for this block, so the label file can be made and saved there.
