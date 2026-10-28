@@ -91,7 +91,7 @@ function makeVars(dir, makeArgs) {
 }
 
 function readVars() {
-  const vars = makeVars(fw, [`SYSTEM_FILES_DIR=${posix(path.join(STW, 'make'))}`, 'stw-vars']);
+  const vars = makeVars(fw, [`SYSTEM_FILES_DIR=${posix(path.join(STW, 'make'))}`, 'SIMPLE_TOUCH_WEB=1', 'stw-vars']);
   if (!('CPP_SOURCES' in vars)) {
     fail('the Makefile did not include $(SYSTEM_FILES_DIR)/Makefile: see README, "Building"');
   }
@@ -187,10 +187,10 @@ const units = [];
 const add = (group, base, files, flags, own) => {
   for (const src of files) {
     const rel = path.relative(base, src).replaceAll('..', '__');
-    units.push({ src, obj: path.join(buildDir, group, rel.replace(/\.(c|cpp)$/, '.o')), flags, own });
+    units.push({ src, obj: path.join(buildDir, group, rel.replace(/\.(c|cc|cpp)$/, '.o')), flags, own });
   }
 };
-add('firmware', fw, [...words(vars.CPP_SOURCES), ...words(vars.C_SOURCES)].map((s) => path.resolve(fw, s)), firmwareFlags, true);
+add('firmware', fw, [...words(vars.CPP_SOURCES), ...words(vars.CC_SOURCES), ...words(vars.C_SOURCES)].map((s) => path.resolve(fw, s)), firmwareFlags, true);
 add('board', path.join(STW, 'board', 'src'), sourcesUnder(path.join(STW, 'board', 'src')), [boardInclude, ...libdaisyIncludes], true);
 add('libdaisy', path.join(libdaisy, 'src'), LIBDAISY_SOURCES.map((s) => path.join(libdaisy, 'src', s)), [boardInclude, ...libdaisyIncludes], false);
 if (dsp) add('daisysp', daisysp, dsp.sources, dsp.includes, false);

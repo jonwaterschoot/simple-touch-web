@@ -7,7 +7,9 @@
 # A SYSTEM_FILES_DIR on make's command line wins over that assignment, so
 #   make -C <firmware> SYSTEM_FILES_DIR=<simple-touch-web>/make stw-vars
 # includes this file instead and prints the sources, include paths, defines
-# and options as the firmware's Makefile leaves them.
+# and options as the firmware's Makefile leaves them. SIMPLE_TOUCH_WEB=1 is set
+# on the same command line, so a Makefile can add what only the browser build
+# needs (ifdef SIMPLE_TOUCH_WEB ... endif).
 
 OPT ?= -O2
 CPP_STANDARD ?= -std=gnu++14
@@ -18,6 +20,7 @@ stw-vars:
 	$(info STW TARGET=$(TARGET))
 	$(info STW CPP_SOURCES=$(CPP_SOURCES))
 	$(info STW C_SOURCES=$(C_SOURCES))
+	$(info STW CC_SOURCES=$(CC_SOURCES))
 	$(info STW C_INCLUDES=$(C_INCLUDES))
 	$(info STW C_DEFS=$(C_DEFS))
 	$(info STW CFLAGS=$(CFLAGS))
