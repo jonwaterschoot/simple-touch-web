@@ -148,7 +148,7 @@ The workflow takes these inputs: `firmware-dir` (where the Makefile is), `branch
 
 ### Approving a build
 
-The author decides whether others may play their firmware, and which build. Approving one means pasting its `emulator` block into the firmware's `simple-touch-labels.json`:
+The author decides whether others may play their firmware, and which build. Approving one means putting its `emulator` block into the firmware's `simple-touch-labels.json`. The [designer](https://jonwaterschoot.github.io/simple-touch-labels/editor.html) does it for you: under Firmware, **Find builds in the repository** lists the builds on the `simple-touch-web` branch, and **Use this build** fills in the block. By hand, the block is in the run's summary: the repository's **Actions** tab › **Browser build** › the newest run. It looks like this:
 
 ```json
 "emulator": {
