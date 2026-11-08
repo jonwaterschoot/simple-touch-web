@@ -203,6 +203,7 @@ A firmware can add buttons, lists and presets to the test bench and the [Simple 
   "live": {
     "knobs": { "state": "7D 53 50 01 01", "cc": 22 },
     "touch": "7D 53 50 01 02",
+    "hits": "7D 53 50 01 03",
     "oled": { "rows": 32 }
   },
   "settings": [
@@ -243,6 +244,7 @@ With a `live` block, **Connect to Simple Touch** shows the board on the drawing 
 | Knobs | Board → page | `F0 <live.knobs.state> <S30–S37, 0–127> ... F7` |
 | Knobs | Page → board | Control Change `live.knobs.cc` + 0–7 for S30–S37 |
 | Touch | Page → board | `F0 <live.touch> <force per pad, 12 bytes, 0 = up> F7`. Sent on every change and every 500 ms while a pad is down |
+| Hits | Board → page | `F0 <live.hits> <level per pad, 12 bytes, 0 = none> F7`. Pads that played without a firm touch. The page fades each one out, so send only new hits |
 | OLED | Board → page | `F0 7D 53 4F 01 <page> <column> <packed data> F7` |
 
 OLED data is 7-bit packed: groups of up to 7 bytes, each after one byte with their top bits (bit n is byte n). A frame carries any run of columns in one page, so a firmware that updates half pages or whole pages can use it. `live.oled.rows` is 32 or 64. The firmware can send frames with no screen fitted, so the web manual still has a display. A firmware should release pads that stop being refreshed for 2 s, and stop its frames some seconds after the last `request`. The levers are read-only from the page.

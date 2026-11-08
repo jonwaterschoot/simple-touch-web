@@ -266,6 +266,13 @@ function showPad(i, down, force) {
   padEls[i].querySelector('i').style.height = down ? `${Math.round(20 + force * 80)}%` : '0';
 }
 const pressed = new Set();  // pads down on this page
+const glowing = new Array(12).fill(0);  // pads that just played on the board, fading
+let boardPads = 0;  // firm touches on the board
+function paintBoardPad(i) {
+  if (pressed.has(i)) return;
+  const firm = !!(boardPads & (1 << i));
+  showPad(i, firm || glowing[i] > 0, Math.max(firm ? 0.7 : 0, glowing[i]));
+}
 function pad(i, down, force = 0.5) {
   if (!down) held.delete(i);
   if (down) pressed.add(i); else pressed.delete(i);
@@ -448,7 +455,8 @@ function showDevice(labels, from) {
         onMidi: (bytes) => panel?.midi(bytes),
         onChange: () => { panel?.reset(); panel?.ask(); },
         live: {
-          pads: (mask) => { for (let i = 0; i < 12; i++) if (!pressed.has(i)) showPad(i, !!(mask & (1 << i)), 0.7); },
+          pads: (mask) => { boardPads = mask; for (let i = 0; i < 12; i++) paintBoardPad(i); },
+          glow: (i, v) => { glowing[i] = v; paintBoardPad(i); },
           levers: (pos) => { for (const [ref, p] of Object.entries(pos)) showLever[ref](p); },
           knob: (ref, v) => showControl[ref](v),
           oled: (ram, info) => drawOled(screen, ram, info),
@@ -466,6 +474,8 @@ function markSource(next) {
   $('link').hidden = next !== 'device';
   $('midiports').hidden = next === 'device' || !canLink();
   document.querySelectorAll('.lever button').forEach((b) => { b.disabled = next === 'device'; });
+  boardPads = 0;
+  glowing.fill(0);
   for (let i = 0; i < 12; i++) if (!pressed.has(i)) showPad(i, false, 0);
   drawOled($('screen'), null, 0);
   bindPorts();
