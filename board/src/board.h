@@ -53,6 +53,7 @@ I2cDevice* I2cFind(int periph, uint16_t address);
 // ------------------------------------------------------------ USB MIDI
 using MidiRxCallback = void (*)(uint8_t* data, size_t size, void* context);
 void MidiUsbListen(MidiRxCallback cb, void* context);
+bool MidiUsbListening();
 void MidiUsbSend(const uint8_t* data, size_t size);
 
 } // namespace stweb

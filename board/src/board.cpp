@@ -332,6 +332,8 @@ void MidiUsbListen(MidiRxCallback cb, void* context)
     midi_ctx = context;
 }
 
+bool MidiUsbListening() { return midi_cb != nullptr; }
+
 void MidiUsbSend(const uint8_t* data, size_t size)
 {
     if(midi_out_len + size > sizeof(midi_out))
