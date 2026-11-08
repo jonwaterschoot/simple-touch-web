@@ -192,6 +192,39 @@ The author decides whether others may play their firmware, and which build. Appr
 - `sha256` pins the approved build: the loader refuses any other. A build is reproducible, so the same sources and toolchain give the same hash. A local Windows build gets a different hash from the Linux CI build: wasi-sdk's clang reports a different version string in the wasm `producers` section. Approve the hash from the run summary.
 - `raw.githubusercontent.com` and GitHub Pages send the CORS header that a page on another site needs. GitHub release downloads may not.
 
+## Settings and presets
+
+A firmware can add buttons, lists and presets to the test bench and the [Simple Touch library](https://jonwaterschoot.github.io/simple-touch-labels/) with an optional `device` block in its `simple-touch-labels.json`. No page code is needed. [web/device-panel.js](web/device-panel.js) draws them on both pages.
+
+```json
+"device": {
+  "request": "F0 7D 53 50 01 7E F7",
+  "settings": [
+    { "id": "root", "label": "Root note", "widget": "buttons", "cc": 20, "channel": 16,
+      "options": ["C", "C#", "D"] },
+    { "id": "scale", "label": "Scale", "widget": "select", "cc": 21, "channel": 16,
+      "options": ["Natural minor", { "label": "Major", "value": 4 }] }
+  ],
+  "presets": [
+    { "label": "D major", "set": { "root": 2, "scale": 4 } },
+    { "label": "Bank 3", "midi": ["C0 03", "F0 7D 01 F7"] }
+  ]
+}
+```
+
+| Field | What it does |
+|---|---|
+| `request` | Optional. One MIDI message in hex, sent when a firmware or port connects, so the firmware reports its current values |
+| `settings[].widget` | `buttons` sends on click. `select` is a list with a Send button |
+| `settings[].cc`, `channel` | The Control Change it sends and listens for. `channel` is 1–16, default 1 |
+| `settings[].options` | A label per value: a string takes its position as the value, `{ "label", "value" }` sets it (0–127) |
+| `presets[].set` | Setting ids and the values to send |
+| `presets[].midi` | MIDI messages in hex, SysEx included. Sent after `set` |
+
+A setting shows the value the firmware reports on the same CC and channel, so the firmware has to echo its changes. Until the first report nothing is highlighted. A malformed setting or preset is left out and the rest still work.
+
+On the test bench, a build published on GitHub finds its repository's label file by itself. Use `&labels=<url>` for another one, or **Label file** to try a draft.
+
 ## What the board has, and doesn't
 
 | Has | Doesn't (yet) |

@@ -327,7 +327,9 @@ void MidiUsbTransport::StartRx(MidiRxParseCallback callback, void* context)
 {
     stweb::MidiUsbListen(callback, context);
 }
-bool MidiUsbTransport::RxActive() { return true; }
+// False until StartRx, as on the Seed: a firmware that only calls
+// MidiHandler::Listen() relies on it to start receiving.
+bool MidiUsbTransport::RxActive() { return stweb::MidiUsbListening(); }
 void MidiUsbTransport::FlushRx() {}
 void MidiUsbTransport::Tx(uint8_t* buffer, size_t size) { stweb::MidiUsbSend(buffer, size); }
 
