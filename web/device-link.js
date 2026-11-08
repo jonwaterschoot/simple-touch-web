@@ -11,7 +11,7 @@
 //   link.close();            // on the switch back
 //
 // With a `live` section in the device block, pass `live: { pads, levers, knob,
-// oled }` to follow the board, and use link.knob(ref, value) and
+// oled, glow }` to follow the board, and use link.knob(ref, value) and
 // link.pad(index, down, force) to move it.
 
 export const canLink = () => !!globalThis.navigator?.requestMIDIAccess;
@@ -65,6 +65,7 @@ const LEVERS = [['S09_S10', ['right', 'centre', 'left']], ['S07_S08', ['up', 'ce
 const LIVE = [0x7d, 0x53, 0x54, 0x01], OLED = [0x7d, 0x53, 0x4f, 0x01];
 const BEAT_MS = 500, ASK_BEATS = 6;     // the board's frames stop 10 s after a request
 const TOUCH_MS = 30, ECHO_MS = 400;     // a knob's reports are ignored this long after moving it here
+const GLOW_MS = 33, GLOW_STEP = 0.09;   // a hit fades out in about 370 ms
 
 const startsWith = (d, body) => body.every((b, i) => d[1 + i] === b);
 
@@ -92,9 +93,32 @@ export function mountDeviceLink(box, device, { onMidi, onChange, live: follow })
   const forces = new Array(12).fill(0);
   let beat = null, beats = 0, touchTimer = null;
 
+  // The board sends only the hits. The fade happens here.
+  const glow = new Array(12).fill(0);
+  let glowTimer = null;
+  function fade() {
+    glowTimer = null;
+    glow.forEach((g, i) => {
+      if (g <= 0) return;
+      glow[i] = Math.max(0, g - GLOW_STEP);
+      follow.glow?.(i, glow[i], false);
+    });
+    if (glow.some((g) => g > 0)) glowTimer = setTimeout(fade, GLOW_MS);
+  }
+
   function frame(d) {
     if (!follow || !device.live || d[0] !== 0xf0) return;
-    const { knobs, oled } = device.live;
+    const { knobs, oled, hits } = device.live;
+    if (hits && startsWith(d, hits)) {
+      for (let i = 0; i < 12; i++) {
+        const v = d[1 + hits.length + i];
+        if (!v || v >= 0x80) continue;
+        glow[i] = Math.max(glow[i], v / 127);
+        follow.glow?.(i, glow[i], true);
+      }
+      glowTimer ??= setTimeout(fade, GLOW_MS);
+      return;
+    }
     if (startsWith(d, LIVE) && d.length >= 10) {
       const pos = {};
       LEVERS.forEach(([ref, names], i) => { pos[ref] = names[d[5 + i]] ?? 'centre'; });
@@ -223,6 +247,9 @@ export function mountDeviceLink(box, device, { onMidi, onChange, live: follow })
     clearInterval(beat);
     clearTimeout(touchTimer);
     touchTimer = null;
+    clearTimeout(glowTimer);
+    glowTimer = null;
+    glow.forEach((g, i) => { if (g > 0) { glow[i] = 0; follow?.glow?.(i, 0, false); } });
     if (access) access.onstatechange = null;
     detach();
     ram.fill(0);

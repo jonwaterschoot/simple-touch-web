@@ -81,6 +81,7 @@ function parseLive(b) {
   return {
     knobs: state && isData(b.knobs.cc) && b.knobs.cc + 7 <= 127 ? { state, cc: b.knobs.cc } : null,
     touch: parseBody(b.touch),
+    hits: parseBody(b.hits),
     oled: b.oled?.rows === 32 || b.oled?.rows === 64 ? { rows: b.oled.rows } : null,
   };
 }
