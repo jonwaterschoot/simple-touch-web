@@ -78,7 +78,9 @@
   .device-choices button { padding: 4px 8px; font-size: 13px; }
   .device-now { color: var(--muted); font-size: 12px; }
   .device-note { color: #ff7a6b; font-size: 12px; margin: 0; }
-  .device-row select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 4px; }
+  #midiports { margin-bottom: 8px; }
+  #midiports[hidden] { display: none; }
+  #midiports select, .device-row select { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 4px; }
   pre { margin: 0; max-height: 200px; overflow: auto; font: 12px/1.4 ui-monospace, monospace; color: var(--muted); white-space: pre-wrap; }
 </style>
 </head>
@@ -124,15 +126,18 @@
       </section>
       <section>
         <h2>MIDI</h2>
-        <label><input type="checkbox" id="midiin"> MIDI in from this computer's devices</label><br>
+        <div class="row" id="midiports" hidden>
+          <label>In <select id="midiin" aria-label="MIDI input"></select></label>
+          <label>Out <select id="midiout" aria-label="MIDI output"></select></label>
+        </div>
         <label><input type="checkbox" id="midilog"> Show MIDI out in the log</label>
         <p class="hint" id="midicount">MIDI out: 0 messages</p>
       </section>
       <section>
         <h2>Settings and presets</h2>
         <div class="choices" id="source" role="group" aria-label="Source" hidden>
-          <button type="button" data-source="browser" aria-pressed="true">Browser build</button>
-          <button type="button" data-source="device" aria-pressed="false">Device</button>
+          <button type="button" data-source="browser" aria-pressed="true">Play in browser</button>
+          <button type="button" data-source="device" aria-pressed="false">Connect to Simple Touch</button>
         </div>
         <div id="link" hidden></div>
         <div id="device"></div>
@@ -151,7 +156,7 @@
 import { SimpleTouch, BOARD } from '../web/simple-touch.js';
 import { drawOled, playBoot } from '../web/oled.js';
 import { parseDevice, mountDevicePanel } from '../web/device-panel.js';
-import { canLink, mountDeviceLink } from '../web/device-link.js';
+import { canLink, mountDeviceLink, sameDevice, midiSplitter } from '../web/device-link.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -420,7 +425,7 @@ function showDevice(labels, from) {
   panel = device
     ? mountDevicePanel($('device'), device, {
         send: deviceSend,
-        idle: () => (source === 'device' ? 'Not sent: connect the board and choose it under Device.' : 'Not sent: press Start first.'),
+        idle: () => (source === 'device' ? 'Not sent: plug in the Simple Touch and choose its MIDI port.' : 'Not sent: press Start first.'),
       })
     : null;
   link = device
@@ -438,6 +443,8 @@ function showDevice(labels, from) {
 function markSource(next) {
   source = next;
   $('link').hidden = next !== 'device';
+  $('midiports').hidden = next === 'device' || !canLink();
+  bindPorts();
   $('source').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.source === next)));
 }
 
@@ -451,7 +458,7 @@ async function setSource(next) {
     return;
   }
   stop();
-  status('Device: no firmware runs in this page.');
+  status('Connect to Simple Touch: no firmware runs in this page.');
   if (panel) { link.connect(); return; }
   await loadLabels($('url').value.trim());
   if (!panel) $('devicehint').textContent ||= 'Choose a label file with a device block.';
@@ -525,6 +532,8 @@ $('start').addEventListener('click', async () => {
     st.on('log', (m) => log(m.text));
     st.on('midi', (m) => {
       panel?.midi(m.bytes);
+      const port = midiAccess?.outputs.get(midiOutId);
+      if (port) for (const msg of splitMidiOut(m.bytes)) { try { port.send(msg); } catch { /* port just went away */ } }
       midiCount++;
       $('midicount').textContent = `MIDI out: ${midiCount} messages`;
       if ($('midilog').checked) log(`midi out: ${[...m.bytes].map((b) => b.toString(16).padStart(2, '0')).join(' ')}\n`);
@@ -545,7 +554,6 @@ $('start').addEventListener('click', async () => {
     await loadLabels(url);
     panel?.ask();
     if (inputs.choice) selectInput(inputs.choice);
-    if ($('midiin').checked) connectMidi();
   } catch (e) {
     status(e.message, true);
     stop();
@@ -565,19 +573,60 @@ function stop() {
 $('stop').addEventListener('click', () => { stop(); status('Stopped.'); });
 $('volume').addEventListener('input', () => { if (out) out.gain.value = Number($('volume').value); });
 
-// ------------------------------------------------------------ MIDI in
-async function connectMidi() {
-  try {
-    midiAccess ??= await navigator.requestMIDIAccess({ sysex: false });
-    for (const input of midiAccess.inputs.values()) {
-      input.onmidimessage = (e) => { if ($('midiin').checked) st?.sendMidi(e.data); };
-    }
-  } catch (e) {
-    status(`MIDI: ${e.message}`, true);
-    $('midiin').checked = false;
+// ------------------------------------------------------------ MIDI ports
+// The browser build's MIDI in and out: other gear on this computer. Web MIDI
+// takes whole messages and the firmware's bytes come per audio block.
+let midiInId = '', midiOutId = '';
+const splitMidiOut = midiSplitter();
+
+function fillPorts() {
+  const fill = (select, ports, current, all) => {
+    const items = !midiAccess ? [['', 'Off'], ['connect', 'Connect…']]
+      : [['', 'Off'], ...(all ? [['*', 'All inputs']] : []), ...[...ports.values()].map((p) => [p.id, p.name || p.id])];
+    select.replaceChildren(...items.map(([value, text]) => new Option(text, value)));
+    select.value = items.some(([value]) => value === current) ? current : '';
+  };
+  fill($('midiin'), midiAccess?.inputs, midiInId, true);
+  fill($('midiout'), midiAccess?.outputs, midiOutId, false);
+}
+
+function bindPorts() {
+  if (!midiAccess) return;
+  const output = midiAccess.outputs.get(midiOutId);
+  for (const p of midiAccess.inputs.values()) {
+    const on = source === 'browser' && (midiInId === '*' || midiInId === p.id) && !sameDevice(p, output);
+    p.onmidimessage = on ? (e) => { if (e.data[0] !== 0xfe) st?.sendMidi(e.data); } : null;
   }
 }
-$('midiin').addEventListener('change', () => { if ($('midiin').checked) connectMidi(); });
+
+async function pickPort(dir, chosen) {
+  let v = chosen;
+  if (v === 'connect') {
+    try {
+      midiAccess = await navigator.requestMIDIAccess({ sysex: true });
+      midiAccess.onstatechange = () => { fillPorts(); bindPorts(); };
+      v = dir === 'in' ? '*' : '';
+    } catch (e) {
+      v = '';
+      status(`MIDI: ${e.message}`, true);
+    }
+  }
+  // One device as both in and out would feed the browser build back into
+  // itself. 'All inputs' leaves that device out instead (bindPorts).
+  const port = midiAccess && (dir === 'in' ? midiAccess.inputs.get(v) : midiAccess.outputs.get(v));
+  const other = midiAccess && (dir === 'in' ? midiAccess.outputs.get(midiOutId) : midiAccess.inputs.get(midiInId));
+  if (sameDevice(port, other)) {
+    status(`${port.name} is already the MIDI ${dir === 'in' ? 'out' : 'in'}. To control the board, choose Connect to Simple Touch.`, true);
+    v = '';
+  }
+  if (dir === 'in') midiInId = v; else midiOutId = v;
+  fillPorts();
+  bindPorts();
+}
+$('midiin').addEventListener('change', (e) => pickPort('in', e.target.value));
+$('midiout').addEventListener('change', (e) => pickPort('out', e.target.value));
+$('midiports').hidden = !canLink();
+fillPorts();
 </script>
 </body>
 </html>
