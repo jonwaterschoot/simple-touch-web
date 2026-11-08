@@ -1,12 +1,12 @@
-// simple-touch-web: the Device source of the test bench and the Simple Touch
-// library. The page runs no firmware and reads and writes a real board over
+// simple-touch-web: the "Connect to Simple Touch" mode of the test bench and the
+// Simple Touch library. The page runs no firmware and reads and writes a real board over
 // Web MIDI. See the README, "Settings and presets".
 //
 //   const link = mountDeviceLink(box, device, {
 //     onMidi: (bytes) => panel.midi(bytes),
 //     onChange: () => { panel.reset(); panel.ask(); },  // another board, or the same one back
 //   });
-//   link.connect();          // on the switch to Device
+//   link.connect();          // on the switch to this mode
 //   link.send(bytes);        // false: no port to send to
 //   link.close();            // on the switch back
 
@@ -22,18 +22,51 @@ function deviceName(port) {
 
 export const sameDevice = (a, b) => !!a && !!b && deviceName(a) === deviceName(b);
 
+const dataBytes = (s) => (s < 0xc0 ? 2 : s < 0xe0 ? 1 : s < 0xf0 ? 2 : s === 0xf2 ? 2 : s === 0xf1 || s === 0xf3 ? 1 : 0);
+
+// A firmware's output arrives as the bytes it wrote per audio block, running
+// status included. Web MIDI's send() takes one whole message.
+export function midiSplitter() {
+  let running = 0;
+  return (b) => {
+    const out = [];
+    let i = 0;
+    while (i < b.length) {
+      const x = b[i];
+      if (x === 0xf0) {
+        let j = i + 1;
+        while (j < b.length && b[j] !== 0xf7) j++;
+        out.push(b.slice(i, j + 1));
+        i = j + 1;
+      } else if (x >= 0xf8) {
+        out.push(b.slice(i, i + 1));
+        i++;
+      } else {
+        let status = running;
+        if (x & 0x80) { status = x; i++; running = x < 0xf0 ? x : 0; }
+        if (!status) { i++; continue; }
+        const n = dataBytes(status);
+        if (i + n > b.length) break;
+        out.push(Uint8Array.of(status, ...b.slice(i, i + n)));
+        i += n;
+      }
+    }
+    return out;
+  };
+}
+
 const live = (ports) => [...ports.values()].filter((p) => p.state !== 'disconnected');
 const usesSysex = (device) => device.request?.[0] === 0xf0 || device.presets.some((p) => p.messages.some((m) => m[0] === 0xf0));
 
 export function mountDeviceLink(box, device, { onMidi, onChange }) {
   const doc = box.ownerDocument;
   const list = doc.createElement('select');
-  list.setAttribute('aria-label', 'Device');
+  list.setAttribute('aria-label', 'MIDI port');
   const status = doc.createElement('span');
   status.className = 'device-now';
   const title = doc.createElement('span');
   title.className = 'device-label';
-  title.textContent = 'Device';
+  title.textContent = 'MIDI port';
   const row = doc.createElement('div');
   row.className = 'device-row';
   row.append(title, list, status);

@@ -113,7 +113,7 @@ node test/smoke.mjs ../TouchPlaited/build-web/TouchPlaited.wasm 0+2   # P0 and P
 - the controls laid out as on the panel, and the pads with force
 - the OLED and LED
 - audio in: the mic, a loop from [demo/loops](demo/loops/loops.json) (drums, chords, melody and a texture, 95 bpm), or a file of your own. The Simple Touch library uses the same loops from here.
-- Web MIDI as MIDI input, and a count (or a log) of the MIDI the firmware sends
+- MIDI in and MIDI out ports for the browser build (one device cannot be both), and a count (or a log) of the MIDI the firmware sends
 - the firmware's log
 
 A combo with a time limit is hard with a mouse: two right-clicks and a trip to the third control can take a few seconds. Use the keys shown on the pads, or give the browser build a longer limit with `#ifdef SIMPLE_TOUCH_WEB`.
@@ -215,7 +215,7 @@ A firmware can add buttons, lists and presets to the test bench and the [Simple 
 
 | Field | What it does |
 |---|---|
-| `port` | Optional. Text in the board's USB MIDI name. Device mode picks that port by itself |
+| `port` | Optional. Text in the board's USB MIDI name. **Connect to Simple Touch** picks that port by itself |
 | `request` | Optional. One MIDI message in hex, sent when a firmware or board connects, so the firmware reports its current values |
 | `settings[].widget` | `buttons` sends on click. `select` is a list with a Send button |
 | `settings[].cc`, `channel` | The Control Change it sends and listens for. `channel` is 1–16, default 1 |
@@ -227,7 +227,7 @@ A setting shows the value the firmware reports on the same CC and channel, so th
 
 On the test bench, a build published on GitHub finds its repository's label file by itself. Use `&labels=<url>` for another one, or **Label file** to try a draft.
 
-A panel has two sources, and only one is active at a time. **Browser build** sends to the firmware running in the page. **Device** stops that firmware and sends to a real board over Web MIDI ([web/device-link.js](web/device-link.js)), and the panel shows what the board reports. Web MIDI runs in Chrome, Edge and Firefox. A `request` or preset with SysEx makes the browser ask for SysEx permission. On Windows, close any other app that has the board's port open.
+A panel has two modes, and only one is active at a time. **Play in browser** sends to the firmware running in the page. **Connect to Simple Touch** stops that firmware and sends to a real board over Web MIDI ([web/device-link.js](web/device-link.js)), and the panel shows what the board reports. Web MIDI runs in Chrome, Edge and Firefox. A `request` or preset with SysEx makes the browser ask for SysEx permission. On Windows, close any other app that has the board's port open.
 
 ## What the board has, and doesn't
 
