@@ -198,6 +198,7 @@ A firmware can add buttons, lists and presets to the test bench and the [Simple 
 
 ```json
 "device": {
+  "port": "TouchSpore",
   "request": "F0 7D 53 50 01 7E F7",
   "settings": [
     { "id": "root", "label": "Root note", "widget": "buttons", "cc": 20, "channel": 16,
@@ -214,7 +215,8 @@ A firmware can add buttons, lists and presets to the test bench and the [Simple 
 
 | Field | What it does |
 |---|---|
-| `request` | Optional. One MIDI message in hex, sent when a firmware or port connects, so the firmware reports its current values |
+| `port` | Optional. Text in the board's USB MIDI name. Device mode picks that port by itself |
+| `request` | Optional. One MIDI message in hex, sent when a firmware or board connects, so the firmware reports its current values |
 | `settings[].widget` | `buttons` sends on click. `select` is a list with a Send button |
 | `settings[].cc`, `channel` | The Control Change it sends and listens for. `channel` is 1–16, default 1 |
 | `settings[].options` | A label per value: a string takes its position as the value, `{ "label", "value" }` sets it (0–127) |
@@ -224,6 +226,8 @@ A firmware can add buttons, lists and presets to the test bench and the [Simple 
 A setting shows the value the firmware reports on the same CC and channel, so the firmware has to echo its changes. Until the first report nothing is highlighted. A malformed setting or preset is left out and the rest still work.
 
 On the test bench, a build published on GitHub finds its repository's label file by itself. Use `&labels=<url>` for another one, or **Label file** to try a draft.
+
+A panel has two sources, and only one is active at a time. **Browser build** sends to the firmware running in the page. **Device** stops that firmware and sends to a real board over Web MIDI ([web/device-link.js](web/device-link.js)), and the panel shows what the board reports. Web MIDI runs in Chrome, Edge and Firefox. A `request` or preset with SysEx makes the browser ask for SysEx permission. On Windows, close any other app that has the board's port open.
 
 ## What the board has, and doesn't
 

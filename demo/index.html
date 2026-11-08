@@ -70,6 +70,8 @@
   .slider { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
   .slider input { flex: 1; }
   .hint { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  #source { margin-bottom: 8px; }
+  #source[hidden] { display: none; }
   .device-row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 8px; }
   .device-label { color: var(--muted); flex: 0 0 100%; }
   .device-choices { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -128,6 +130,11 @@
       </section>
       <section>
         <h2>Settings and presets</h2>
+        <div class="choices" id="source" role="group" aria-label="Source" hidden>
+          <button type="button" data-source="browser" aria-pressed="true">Browser build</button>
+          <button type="button" data-source="device" aria-pressed="false">Device</button>
+        </div>
+        <div id="link" hidden></div>
         <div id="device"></div>
         <label>Label file <input type="file" id="labels" accept=".json"></label>
         <p class="hint" id="devicehint"></p>
@@ -144,6 +151,7 @@
 import { SimpleTouch, BOARD } from '../web/simple-touch.js';
 import { drawOled, playBoot } from '../web/oled.js';
 import { parseDevice, mountDevicePanel } from '../web/device-panel.js';
+import { canLink, mountDeviceLink } from '../web/device-link.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -395,20 +403,65 @@ async function selectInput(choice) {
 // ------------------------------------------------------------ settings and presets
 // The `device` block of a label file: ?labels=<url>, a file chosen here (a
 // draft), or the file next to a build published on GitHub.
-let panel = null;
+// Source: the browser build or a real board, never both, so MIDI cannot loop.
+let panel = null, link = null, source = 'browser';
+
+function deviceSend(bytes) {
+  if (source === 'device') return !!link?.send(bytes);
+  if (!st) return false;
+  st.sendMidi(bytes);
+  return true;
+}
 
 function showDevice(labels, from) {
   const device = parseDevice(labels?.device);
+  link?.close();
+  panel?.reset();
   panel = device
     ? mountDevicePanel($('device'), device, {
-        send: (bytes) => { if (!st) return false; st.sendMidi(bytes); return true; },
-        idle: 'Not sent: press Start first.',
+        send: deviceSend,
+        idle: () => (source === 'device' ? 'Not sent: connect the board and choose it under Device.' : 'Not sent: press Start first.'),
       })
     : null;
-  if (!device) $('device').replaceChildren();
+  link = device
+    ? mountDeviceLink($('link'), device, {
+        onMidi: (bytes) => panel?.midi(bytes),
+        onChange: () => { panel?.reset(); panel?.ask(); },
+      })
+    : null;
+  if (!device) { $('device').replaceChildren(); $('link').replaceChildren(); }
   $('devicehint').textContent = device ? `From ${from}.` : `No settings or presets in ${from}.`;
-  panel?.ask();
+  if (source === 'device') link?.connect();
+  else panel?.ask();
 }
+
+function markSource(next) {
+  source = next;
+  $('link').hidden = next !== 'device';
+  $('source').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.source === next)));
+}
+
+async function setSource(next) {
+  if (next === source) return;
+  markSource(next);
+  panel?.reset();
+  if (next === 'browser') {
+    link?.close();
+    status('Press Start to run the browser build.');
+    return;
+  }
+  stop();
+  status('Device: no firmware runs in this page.');
+  if (panel) { link.connect(); return; }
+  await loadLabels($('url').value.trim());
+  if (!panel) $('devicehint').textContent ||= 'Choose a label file with a device block.';
+}
+
+$('source').hidden = !canLink();
+$('source').addEventListener('click', (e) => {
+  const next = e.target.closest('button')?.dataset.source;
+  if (next) setSource(next);
+});
 
 function labelsUrl(wasm) {
   const m = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\//.exec(wasm);
@@ -447,6 +500,7 @@ $('start').addEventListener('click', async () => {
   const file = $('file').files[0];
   const url = $('url').value.trim();
   if (!file && !url) return status('Give a URL or choose a .wasm file.', true);
+  if (source === 'device') { markSource('browser'); link?.close(); panel?.reset(); }
   stop();
   status('Loading…');
   try {
