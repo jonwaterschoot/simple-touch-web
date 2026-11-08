@@ -75,7 +75,7 @@ export function parseDevice(block) {
   const settings = list(block.settings, LIMIT.settings).map(parseSetting).filter(Boolean);
   const presets = list(block.presets, LIMIT.presets).map((p) => parsePreset(p, settings)).filter(Boolean);
   if (!settings.length && !presets.length) return null;
-  return { request: parseHex(block.request), settings, presets };
+  return { port: label(block.port), request: parseHex(block.request), settings, presets };
 }
 
 export function mountDevicePanel(box, device, { send, idle = 'Not sent: nothing is connected.' }) {
@@ -90,7 +90,7 @@ export function mountDevicePanel(box, device, { send, idle = 'Not sent: nothing 
   note.setAttribute('role', 'status');
   const post = (messages) => {
     const ok = messages.map((m) => send(m) !== false).every(Boolean);
-    note.textContent = ok ? '' : idle;
+    note.textContent = ok ? '' : typeof idle === 'function' ? idle() : idle;
     return ok;
   };
   const button = (text, onClick) => {
@@ -131,6 +131,7 @@ export function mountDevicePanel(box, device, { send, idle = 'Not sent: nothing 
     const now = el('span', 'device-now');
     row.append(list, go, now);
     return (v) => {
+      if (v === null) { current = null; choosing = false; now.textContent = ''; return; }
       const o = s.options.find((x) => x.value === v);
       if (!o) return;
       current = v;
@@ -156,7 +157,7 @@ export function mountDevicePanel(box, device, { send, idle = 'Not sent: nothing 
   box.append(note);
 
   // Bytes from the firmware or a port: whole messages or the raw stream.
-  let status = 0, cc = -1, sysex = false;
+  let status = 0, cc = -1, sysex = false, heard = false;
   function midi(bytes) {
     for (const b of bytes) {
       if (b >= 0xf8) continue;
@@ -166,13 +167,35 @@ export function mountDevicePanel(box, device, { send, idle = 'Not sent: nothing 
         cc = -1;
       } else if (!sysex && (status & 0xf0) === 0xb0) {
         if (cc < 0) { cc = b; continue; }
-        reports.get(`${(status & 15) + 1}:${cc}`)?.(b);
+        const show = reports.get(`${(status & 15) + 1}:${cc}`);
+        if (show) { heard = true; show(b); }
         cc = -1;
       }
     }
   }
 
-  // Asks the firmware for its current values, once something is connected.
-  const ask = () => { if (device.request) send(device.request); };
-  return { midi, ask };
+  // Asks the firmware for its current values, once something is connected. A
+  // firmware that is still booting drops the request, so it repeats until a
+  // value comes back.
+  let again = null;
+  function ask() {
+    clearTimeout(again);
+    if (!device.request) return;
+    heard = false;
+    let tries = 5;
+    const go = () => {
+      if (heard || send(device.request) === false || --tries === 0) return;
+      again = setTimeout(go, 400);
+    };
+    go();
+  }
+
+  // Forgets the reported values when the page talks to something else.
+  function reset() {
+    clearTimeout(again);
+    status = 0; cc = -1; sysex = false; heard = false;
+    note.textContent = '';
+    for (const show of reports.values()) show(null);
+  }
+  return { midi, ask, reset };
 }
