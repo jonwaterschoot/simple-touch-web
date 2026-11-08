@@ -200,6 +200,11 @@ A firmware can add buttons, lists and presets to the test bench and the [Simple 
 "device": {
   "port": "TouchSpore",
   "request": "F0 7D 53 50 01 7E F7",
+  "live": {
+    "knobs": { "state": "7D 53 50 01 01", "cc": 22 },
+    "touch": "7D 53 50 01 02",
+    "oled": { "rows": 32 }
+  },
   "settings": [
     { "id": "root", "label": "Root note", "widget": "buttons", "cc": 20, "channel": 16,
       "options": ["C", "C#", "D"] },
@@ -217,6 +222,7 @@ A firmware can add buttons, lists and presets to the test bench and the [Simple 
 |---|---|
 | `port` | Optional. Text in the board's USB MIDI name. **Connect to Simple Touch** picks that port by itself |
 | `request` | Optional. One MIDI message in hex, sent when a firmware or board connects, so the firmware reports its current values |
+| `live` | Optional. In **Connect to Simple Touch**, the page follows the board and moves it. See below |
 | `settings[].widget` | `buttons` sends on click. `select` is a list with a Send button |
 | `settings[].cc`, `channel` | The Control Change it sends and listens for. `channel` is 1–16, default 1 |
 | `settings[].options` | A label per value: a string takes its position as the value, `{ "label", "value" }` sets it (0–127) |
@@ -226,6 +232,20 @@ A firmware can add buttons, lists and presets to the test bench and the [Simple 
 A setting shows the value the firmware reports on the same CC and channel, so the firmware has to echo its changes. Until the first report nothing is highlighted. A malformed setting or preset is left out and the rest still work.
 
 On the test bench, a build published on GitHub finds its repository's label file by itself. Use `&labels=<url>` for another one, or **Label file** to try a draft.
+
+### Live link
+
+With a `live` block, **Connect to Simple Touch** shows the board on the drawing and the test bench. The page sends `request` every 3 s while connected. A firmware needs to do the same things as TouchSpore's `SporeUI::_SendLink`.
+
+| Frame | Direction | Bytes |
+|---|---|---|
+| Live | Board → page | `F0 7D 53 54 01 <S09_S10> <S07_S08> <pads lo7> <pads hi5> F7`. Levers: S09_S10 0 right, 1 centre, 2 left. S07_S08 0 up, 1 centre, 2 down. Required with `live` |
+| Knobs | Board → page | `F0 <live.knobs.state> <S30–S37, 0–127> ... F7` |
+| Knobs | Page → board | Control Change `live.knobs.cc` + 0–7 for S30–S37 |
+| Touch | Page → board | `F0 <live.touch> <force per pad, 12 bytes, 0 = up> F7`. Sent on every change and every 500 ms while a pad is down |
+| OLED | Board → page | `F0 7D 53 4F 01 <page> <column> <packed data> F7` |
+
+OLED data is 7-bit packed: groups of up to 7 bytes, each after one byte with their top bits (bit n is byte n). A frame carries any run of columns in one page, so a firmware that updates half pages or whole pages can use it. `live.oled.rows` is 32 or 64. The firmware can send frames with no screen fitted, so the web manual still has a display. A firmware should release pads that stop being refreshed for 2 s, and stop its frames some seconds after the last `request`. The levers are read-only from the page.
 
 A panel has two modes, and only one is active at a time. **Play in browser** sends to the firmware running in the page. **Connect to Simple Touch** stops that firmware and sends to a real board over Web MIDI ([web/device-link.js](web/device-link.js)), and the panel shows what the board reports. Web MIDI runs in Chrome, Edge and Firefox. A `request` or preset with SysEx makes the browser ask for SysEx permission. On Windows, close any other app that has the board's port open.
 

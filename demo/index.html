@@ -177,6 +177,8 @@ function log(text) {
 }
 
 // ------------------------------------------------------------ knobs, faders, levers
+const showControl = {}, showLever = {};
+
 function control(ref, kind) {
   const box = document.createElement('label');
   box.className = kind;
@@ -186,7 +188,13 @@ function control(ref, kind) {
     controls[ref] = Number(input.value);
     box.querySelector('output').textContent = controls[ref].toFixed(2);
     st?.setControl(ref, controls[ref]);
+    if (source === 'device') link?.knob(ref, controls[ref]);
   });
+  showControl[ref] = (v) => {
+    controls[ref] = v;
+    input.value = String(v);
+    box.querySelector('output').textContent = v.toFixed(2);
+  };
   return box;
 }
 
@@ -206,6 +214,10 @@ function lever(ref, vertical) {
     });
     row.append(b);
   }
+  showLever[ref] = (pos) => {
+    levers[ref] = pos;
+    row.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x.textContent === pos)));
+  };
   const name = document.createElement('div');
   name.className = 'lever-name';
   name.textContent = ref.replace('_', '/');
@@ -253,10 +265,13 @@ function showPad(i, down, force) {
   padEls[i].classList.toggle('on', down);
   padEls[i].querySelector('i').style.height = down ? `${Math.round(20 + force * 80)}%` : '0';
 }
+const pressed = new Set();  // pads down on this page
 function pad(i, down, force = 0.5) {
   if (!down) held.delete(i);
+  if (down) pressed.add(i); else pressed.delete(i);
   showPad(i, down, force);
   st?.setPad(i, down, force);
+  if (source === 'device') link?.pad(i, down, force);
 }
 
 for (const [i, col, row, key] of PAD_LAYOUT) {
@@ -432,6 +447,12 @@ function showDevice(labels, from) {
     ? mountDeviceLink($('link'), device, {
         onMidi: (bytes) => panel?.midi(bytes),
         onChange: () => { panel?.reset(); panel?.ask(); },
+        live: {
+          pads: (mask) => { for (let i = 0; i < 12; i++) if (!pressed.has(i)) showPad(i, !!(mask & (1 << i)), 0.7); },
+          levers: (pos) => { for (const [ref, p] of Object.entries(pos)) showLever[ref](p); },
+          knob: (ref, v) => showControl[ref](v),
+          oled: (ram, info) => drawOled(screen, ram, info),
+        },
       })
     : null;
   if (!device) { $('device').replaceChildren(); $('link').replaceChildren(); }
@@ -444,6 +465,9 @@ function markSource(next) {
   source = next;
   $('link').hidden = next !== 'device';
   $('midiports').hidden = next === 'device' || !canLink();
+  document.querySelectorAll('.lever button').forEach((b) => { b.disabled = next === 'device'; });
+  for (let i = 0; i < 12; i++) if (!pressed.has(i)) showPad(i, false, 0);
+  drawOled($('screen'), null, 0);
   bindPorts();
   $('source').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.source === next)));
 }

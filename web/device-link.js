@@ -9,6 +9,10 @@
 //   link.connect();          // on the switch to this mode
 //   link.send(bytes);        // false: no port to send to
 //   link.close();            // on the switch back
+//
+// With a `live` section in the device block, pass `live: { pads, levers, knob,
+// oled }` to follow the board, and use link.knob(ref, value) and
+// link.pad(index, down, force) to move it.
 
 export const canLink = () => !!globalThis.navigator?.requestMIDIAccess;
 
@@ -55,10 +59,19 @@ export function midiSplitter() {
   };
 }
 
+const KNOBS = ['S30', 'S31', 'S32', 'S33', 'S34', 'S35', 'S36', 'S37'];
+// Live frame values 0, 1, 2: Switch3 reads POS_UP on its first pin, Init(D7, D6) and Init(D9, D8) here.
+const LEVERS = [['S09_S10', ['right', 'centre', 'left']], ['S07_S08', ['up', 'centre', 'down']]];
+const LIVE = [0x7d, 0x53, 0x54, 0x01], OLED = [0x7d, 0x53, 0x4f, 0x01];
+const BEAT_MS = 500, ASK_BEATS = 6;     // the board's frames stop 10 s after a request
+const TOUCH_MS = 30, ECHO_MS = 400;     // a knob's reports are ignored this long after moving it here
+
+const startsWith = (d, body) => body.every((b, i) => d[1 + i] === b);
+
 const live = (ports) => [...ports.values()].filter((p) => p.state !== 'disconnected');
 const usesSysex = (device) => device.request?.[0] === 0xf0 || device.presets.some((p) => p.messages.some((m) => m[0] === 0xf0));
 
-export function mountDeviceLink(box, device, { onMidi, onChange }) {
+export function mountDeviceLink(box, device, { onMidi, onChange, live: follow }) {
   const doc = box.ownerDocument;
   const list = doc.createElement('select');
   list.setAttribute('aria-label', 'MIDI port');
@@ -74,8 +87,73 @@ export function mountDeviceLink(box, device, { onMidi, onChange }) {
 
   let access = null, input = null, output = null, active = false, chosen = '', denied = false;
 
+  const ram = new Uint8Array(1024);     // as oled.js draws it: 8 pages of 128 bytes
+  const knobCc = new Array(8).fill(-1), knobAt = new Array(8).fill(0), knobNow = new Array(8).fill(-1);
+  const forces = new Array(12).fill(0);
+  let beat = null, beats = 0, touchTimer = null;
+
+  function frame(d) {
+    if (!follow || !device.live || d[0] !== 0xf0) return;
+    const { knobs, oled } = device.live;
+    if (startsWith(d, LIVE) && d.length >= 10) {
+      const pos = {};
+      LEVERS.forEach(([ref, names], i) => { pos[ref] = names[d[5 + i]] ?? 'centre'; });
+      follow.levers?.(pos);
+      follow.pads?.(d[7] | (d[8] << 7));
+    } else if (oled && startsWith(d, OLED)) {
+      let at = d[5] * 128 + d[6], i = 7;
+      const end = d.length - 1;
+      while (i < end) {
+        const top = d[i++];
+        for (let j = 0; j < 7 && i < end; j++) {
+          if (at < ram.length) ram[at] = d[i] | (((top >> j) & 1) << 7);
+          at++; i++;
+        }
+      }
+      follow.oled?.(ram, 1 | (oled.rows << 8));
+    } else if (knobs && startsWith(d, knobs.state)) {
+      const first = 1 + knobs.state.length, now = performance.now();
+      KNOBS.forEach((ref, i) => {
+        const v = d[first + i];
+        if (v === undefined || v >= 0x80 || v === knobNow[i] || now - knobAt[i] < ECHO_MS) return;
+        knobNow[i] = knobCc[i] = v;
+        follow.knob?.(ref, v / 127);
+      });
+    }
+  }
+
+  const put = (bytes) => { try { output?.send(bytes); } catch { /* the port just went away */ } };
+  const sendTouch = () => { if (device.live?.touch) put([0xf0, ...device.live.touch, ...forces, 0xf7]); };
+
+  function tick() {
+    if (forces.some((f) => f > 0)) sendTouch();     // the board lets go of a pad not refreshed for 2 s
+    if (++beats >= ASK_BEATS) {
+      beats = 0;
+      if (device.request) put(device.request);
+    }
+  }
+
+  function knob(ref, value) {
+    const i = KNOBS.indexOf(ref), k = device.live?.knobs;
+    if (i < 0 || !k || !active) return;
+    const v = Math.round(Math.min(1, Math.max(0, value)) * 127);
+    knobAt[i] = performance.now();
+    if (v === knobCc[i]) return;
+    knobCc[i] = knobNow[i] = v;
+    put([0xb0, k.cc + i, v]);
+  }
+
+  function pad(i, down, force = 0.5) {
+    if (i < 0 || i >= 12 || !device.live?.touch || !active) return;
+    const was = forces[i] > 0;
+    forces[i] = down ? Math.max(1, Math.round(force * 127)) : 0;
+    if (was !== down) { clearTimeout(touchTimer); touchTimer = null; sendTouch(); }
+    else touchTimer ??= setTimeout(() => { touchTimer = null; sendTouch(); }, TOUCH_MS);
+  }
+
   function detach() {
     if (input) { input.onmidimessage = null; input.close?.(); }
+    if (forces.some((f) => f > 0)) { forces.fill(0); sendTouch(); }
     output?.close?.();
     input = output = null;
   }
@@ -111,7 +189,8 @@ export function mountDeviceLink(box, device, { onMidi, onChange }) {
       if (input && input !== next) { input.onmidimessage = null; input.close?.(); }
       input = next;
       output = nextOut;
-      if (input) input.onmidimessage = (e) => onMidi(e.data);
+      if (input) input.onmidimessage = (e) => { onMidi(e.data); frame(e.data); };
+      knobNow.fill(-1);
       show();
       onChange?.();
     } else {
@@ -134,14 +213,19 @@ export function mountDeviceLink(box, device, { onMidi, onChange }) {
     if (!active) return false;  // switched back while the browser was asking
     access.onstatechange = () => { if (active) pick(); };
     pick();
+    if (device.live) { clearInterval(beat); beats = 0; beat = setInterval(tick, BEAT_MS); }
     return true;
   }
 
   function close() {
     active = false;
     denied = false;
+    clearInterval(beat);
+    clearTimeout(touchTimer);
+    touchTimer = null;
     if (access) access.onstatechange = null;
     detach();
+    ram.fill(0);
     show();
   }
 
@@ -157,5 +241,5 @@ export function mountDeviceLink(box, device, { onMidi, onChange }) {
   });
 
   show();
-  return { connect, close, send };
+  return { connect, close, send, knob, pad, follows: !!(follow && device.live) };
 }

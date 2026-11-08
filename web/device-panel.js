@@ -67,6 +67,24 @@ function parsePreset(p, settings) {
   return messages.length && messages.length <= LIMIT.messages ? { label: label(p.label), messages } : null;
 }
 
+// Hex bytes after F0, without a value or F7: the start of a frame.
+function parseBody(text) {
+  if (typeof text !== 'string') return null;
+  const parts = text.trim().split(/\s+/);
+  if (parts.length > 16 || !parts.every((p) => /^[0-7][0-9a-f]$/i.test(p))) return null;
+  return parts.map((p) => parseInt(p, 16));
+}
+
+function parseLive(b) {
+  if (!b || typeof b !== 'object') return null;
+  const state = parseBody(b.knobs?.state);
+  return {
+    knobs: state && isData(b.knobs.cc) && b.knobs.cc + 7 <= 127 ? { state, cc: b.knobs.cc } : null,
+    touch: parseBody(b.touch),
+    oled: b.oled?.rows === 32 || b.oled?.rows === 64 ? { rows: b.oled.rows } : null,
+  };
+}
+
 // A malformed setting or preset is left out and the rest still work. Null when
 // nothing usable is left.
 export function parseDevice(block) {
@@ -75,7 +93,7 @@ export function parseDevice(block) {
   const settings = list(block.settings, LIMIT.settings).map(parseSetting).filter(Boolean);
   const presets = list(block.presets, LIMIT.presets).map((p) => parsePreset(p, settings)).filter(Boolean);
   if (!settings.length && !presets.length) return null;
-  return { port: label(block.port), request: parseHex(block.request), settings, presets };
+  return { port: label(block.port), request: parseHex(block.request), live: parseLive(block.live), settings, presets };
 }
 
 export function mountDevicePanel(box, device, { send, idle = 'Not sent: nothing is connected.' }) {
