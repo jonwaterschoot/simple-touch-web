@@ -73,6 +73,30 @@ int main() {
 
 `SIMPLE_TOUCH_WEB` is defined for every file of the browser build. Use it to leave out anything with no browser equivalent, such as flash writes or bootloader jumps.
 
+Three things that catch a firmware on its first build:
+
+- **No spin on the clock in `Loop()`.** The clock advances only between passes and with `System::Delay()`, so `while (System::GetNow() < next) {}` never ends and the page hangs. End the browser pass in `System::Delay(period_ms)`, and keep the spin for the Seed:
+
+  ```cpp
+  #ifdef SIMPLE_TOUCH_WEB
+      System::Delay(kPeriodMs);
+  #else
+      while (static_cast<int32_t>(System::GetNow() - next) < 0) {}
+  #endif
+  ```
+
+- **Leave newlib stubs out.** A `syscalls.cpp` with `_write`, `_lseek` and the like (TouchString's does this) doesn't compile for WebAssembly: `_off_t` and `_READ_WRITE_RETURN_TYPE` don't exist there. Remove it in the Makefile:
+
+  ```make
+  ifdef SIMPLE_TOUCH_WEB
+  CPP_SOURCES := $(filter-out touch/syscalls.cpp,$(CPP_SOURCES))
+  endif
+  ```
+
+  Put this above `include $(SYSTEM_FILES_DIR)/Makefile`.
+
+- **Ignore the build folder.** Add `build-web` to the firmware's `.gitignore`. The build and the smoke test's WAV both go there.
+
 ## Checking a build
 
 [test/smoke.mjs](test/smoke.mjs) runs a build headless in Node, through the same worklet processor the page uses. It boots the firmware, plays the pads, and prints the levels, the OLED (as text), the LED and MIDI activity and the render speed. It also writes the audio to a WAV next to the build:
@@ -91,6 +115,8 @@ node test/smoke.mjs ../TouchPlaited/build-web/TouchPlaited.wasm 0+2   # P0 and P
 - audio in: the mic, a loop from [demo/loops](demo/loops/loops.json) (drums, chords, melody and a texture, 95 bpm), or a file of your own. The Simple Touch library uses the same loops from here.
 - Web MIDI as MIDI input, and a count (or a log) of the MIDI the firmware sends
 - the firmware's log
+
+A combo with a time limit is hard with a mouse: two right-clicks and a trip to the third control can take a few seconds. Use the keys shown on the pads, or give the browser build a longer limit with `#ifdef SIMPLE_TOUCH_WEB`.
 
 Add `?wasm=<url>` to play a published build. For a local build, serve a folder that holds both repositories:
 
@@ -163,7 +189,7 @@ The author decides whether others may play their firmware, and which build. Appr
 - `"oled": true` (optional) says the firmware drives the optional OLED, so the library shows one on the panel.
 - The library only plays a build from the firmware's own repository: its raw files (`raw.githubusercontent.com/<owner>/<repo>/…`) or its owner's Pages (`<owner>.github.io/…`), or the Codeberg equivalents.
 - The designer has a **Browser build** field for this block, so the label file can be made and saved there.
-- `sha256` pins the approved build: the loader refuses any other. A build is reproducible, so the same sources and toolchain give the same hash.
+- `sha256` pins the approved build: the loader refuses any other. A build is reproducible, so the same sources and toolchain give the same hash. A local Windows build gets a different hash from the Linux CI build: wasi-sdk's clang reports a different version string in the wasm `producers` section. Approve the hash from the run summary.
 - `raw.githubusercontent.com` and GitHub Pages send the CORS header that a page on another site needs. GitHub release downloads may not.
 
 ## What the board has, and doesn't
