@@ -86,15 +86,16 @@ function parseLive(b) {
   };
 }
 
-// A malformed setting or preset is left out and the rest still work. Null when
-// nothing usable is left.
+// A malformed setting or preset is left out and the rest still work. A block
+// with only `live` is valid. Null when nothing usable is left.
 export function parseDevice(block) {
   if (!block || typeof block !== 'object') return null;
   const list = (v, n) => (Array.isArray(v) ? v.slice(0, n) : []);
   const settings = list(block.settings, LIMIT.settings).map(parseSetting).filter(Boolean);
   const presets = list(block.presets, LIMIT.presets).map((p) => parsePreset(p, settings)).filter(Boolean);
-  if (!settings.length && !presets.length) return null;
-  return { port: label(block.port), request: parseHex(block.request), live: parseLive(block.live), settings, presets };
+  const live = parseLive(block.live);
+  if (!settings.length && !presets.length && !live) return null;
+  return { port: label(block.port), request: parseHex(block.request), live, settings, presets };
 }
 
 export function mountDevicePanel(box, device, { send, idle = 'Not sent: nothing is connected.' }) {

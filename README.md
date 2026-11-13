@@ -238,7 +238,7 @@ On the test bench, a build published on GitHub finds its repository's label file
 
 ### Live link
 
-With a `live` block, **Connect to Simple Touch** shows the board on the drawing and the test bench. The page sends `request` every 3 s while connected. A firmware needs to do the same things as TouchSpore's `SporeUI::_SendLink`.
+With a `live` block, **Connect to Simple Touch** shows the board on the drawing and the test bench. The page sends `request` every 3 s while connected. A `device` block can hold `live` alone, with no settings or presets. A firmware needs to do the same things as TouchSpore's `SporeUI::_SendLink`.
 
 | Frame | Direction | Bytes |
 |---|---|---|
