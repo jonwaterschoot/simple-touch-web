@@ -43,6 +43,8 @@ node scripts/build.mjs ../TouchVink
 
 The script asks the firmware's own Makefile what it builds. It sets `SYSTEM_FILES_DIR` to `make/`, so `include $(SYSTEM_FILES_DIR)/Makefile` reads [make/Makefile](make/Makefile) instead of libDaisy's, and that file prints `CPP_SOURCES`, `CC_SOURCES` (`.cc` files, as in Mutable Instruments code), `C_INCLUDES`, `C_DEFS`, `OPT` and the rest. Any firmware with the usual libDaisy Makefile works without changes to the Makefile.
 
+The firmware's sources compile with `-Wall`. Sources in a folder named `thirdparty`, `third_party`, `lib`, `libs`, `vendor` or `external` compile without warnings, as libDaisy and DaisySP do.
+
 Make runs with `SIMPLE_TOUCH_WEB=1` on its command line, so a Makefile can add what only the browser build needs. [TouchPlaited](https://github.com/jonwaterschoot/TouchPlaited) uses it for stmlib's portable code, and to generate a git-ignored header on the way:
 
 ```make

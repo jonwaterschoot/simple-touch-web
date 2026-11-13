@@ -183,11 +183,15 @@ const firmwareFlags = [
   ...words(vars.C_DEFS), ...extraFlags,
 ];
 
+// Code a firmware copied in from elsewhere (TouchPlaited's thirdparty/plaits)
+// compiles without warnings, as libDaisy and DaisySP do.
+const VENDORED = /(^|[\\/])(third[-_]?party|libs?|vendor|external)[\\/]/i;
+
 const units = [];
 const add = (group, base, files, flags, own) => {
   for (const src of files) {
-    const rel = path.relative(base, src).replaceAll('..', '__');
-    units.push({ src, obj: path.join(buildDir, group, rel.replace(/\.(c|cc|cpp)$/, '.o')), flags, own });
+    const rel = path.relative(base, src);
+    units.push({ src, obj: path.join(buildDir, group, rel.replaceAll('..', '__').replace(/\.(c|cc|cpp)$/, '.o')), flags, own: own && !VENDORED.test(rel) });
   }
 };
 add('firmware', fw, [...words(vars.CPP_SOURCES), ...words(vars.CC_SOURCES), ...words(vars.C_SOURCES)].map((s) => path.resolve(fw, s)), firmwareFlags, true);
